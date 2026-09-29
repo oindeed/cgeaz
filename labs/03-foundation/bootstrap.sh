@@ -26,7 +26,7 @@ az storage account create \
   --kind StorageV2 \
   --min-tls-version TLS1_2 \
   --allow-blob-public-access false \
-  --tags env=shared purpose=terraform-state \
+  --tags env=shared purpose=terraform-state data-classification=confidential \
   --output none
 
 echo ">> Enabling blob versioning (every state change becomes a recoverable version)"

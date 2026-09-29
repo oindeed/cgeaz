@@ -54,6 +54,8 @@ docs/       setup guide, architecture, control mappings, validation log
 
 ## Capstone
 
+Architecture, identity boundaries, and design rationale: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 Your graded capstone is this pipeline, running in your subscription, from your fork,
 with your own modifications. Rubric and submission checklist: `docs/RUBRIC.md`
 (published with the course). Stage 5 is optional — extra credit if present, zero

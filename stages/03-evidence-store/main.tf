@@ -5,6 +5,11 @@ locals {
     env     = var.environment
     purpose = "grc-evidence-plane"
   }
+
+  # Every data store declares what it holds (cge-require-data-classification, classification.rego).
+  # Evidence and its lineage: confidential. Functions runtime scratch space: internal.
+  evidence_tags = merge(local.common_tags, { "data-classification" = "confidential" })
+  runtime_tags  = merge(local.common_tags, { "data-classification" = "internal" })
 }
 
 resource "random_string" "suffix" {
@@ -40,7 +45,7 @@ resource "azurerm_cosmosdb_account" "evidence" {
     failover_priority = 0
   }
 
-  tags = local.common_tags
+  tags = local.evidence_tags
 }
 
 resource "azurerm_cosmosdb_sql_database" "grc" {
@@ -94,7 +99,7 @@ resource "azurerm_storage_account" "evidence" {
     versioning_enabled = true
   }
 
-  tags = local.common_tags
+  tags = local.evidence_tags
 }
 
 resource "azurerm_storage_container" "reports" {

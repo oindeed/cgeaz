@@ -29,7 +29,7 @@ resource "azurerm_storage_account" "func_internal" {
   account_replication_type        = "LRS"
   min_tls_version                 = "TLS1_2"
   allow_nested_items_to_be_public = false
-  tags                            = local.common_tags
+  tags                            = merge(local.common_tags, { "data-classification" = "internal" })
 }
 
 resource "azurerm_service_plan" "reporting" {

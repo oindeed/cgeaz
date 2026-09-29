@@ -138,9 +138,11 @@ resource "azurerm_management_group_policy_set_definition" "grc_baseline" {
   management_group_id = azurerm_management_group.sandbox.id
 
   parameters = jsonencode({
-    tagEffect        = { type = "String", defaultValue = "Audit" }
-    publicBlobEffect = { type = "String", defaultValue = "Deny" }
-    workspaceId      = { type = "String" }
+    tagEffect               = { type = "String", defaultValue = "Audit" }
+    publicBlobEffect        = { type = "String", defaultValue = "Deny" }
+    workspaceId             = { type = "String" }
+    classificationTagEffect = { type = "String", defaultValue = "Audit" }
+    restrictedNetworkEffect = { type = "String", defaultValue = "Deny" }
   })
 
   policy_definition_reference {
@@ -163,6 +165,21 @@ resource "azurerm_management_group_policy_set_definition" "grc_baseline" {
       workspaceId = { value = "[parameters('workspaceId')]" }
     })
   }
+
+  # Custom controls (policies-classification.tf): data classification guardrails.
+  policy_definition_reference {
+    policy_definition_id = azurerm_policy_definition.require_data_classification.id
+    parameter_values = jsonencode({
+      effect = { value = "[parameters('classificationTagEffect')]" }
+    })
+  }
+
+  policy_definition_reference {
+    policy_definition_id = azurerm_policy_definition.deny_public_network_restricted.id
+    parameter_values = jsonencode({
+      effect = { value = "[parameters('restrictedNetworkEffect')]" }
+    })
+  }
 }
 
 resource "azurerm_management_group_policy_assignment" "grc_baseline" {
@@ -173,9 +190,11 @@ resource "azurerm_management_group_policy_assignment" "grc_baseline" {
   location             = var.location
 
   parameters = jsonencode({
-    tagEffect        = { value = var.tag_policy_effect }
-    publicBlobEffect = { value = var.public_blob_policy_effect }
-    workspaceId      = { value = azurerm_log_analytics_workspace.grc.id }
+    tagEffect               = { value = var.tag_policy_effect }
+    publicBlobEffect        = { value = var.public_blob_policy_effect }
+    workspaceId             = { value = azurerm_log_analytics_workspace.grc.id }
+    classificationTagEffect = { value = var.classification_tag_effect }
+    restrictedNetworkEffect = { value = var.restricted_network_policy_effect }
   })
 
   # Remediation effects (deployIfNotExists) execute AS this identity.

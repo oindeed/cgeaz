@@ -14,6 +14,15 @@ and it's a first-class criterion on the capstone rubric.
 | `cge-dine-storage-diagnostics` (DeployIfNotExists) | Logging that enforces its own coverage | PR.PS, DE.CM |
 | Remediation identity (user-assigned, whitelist roles) | Every automated change has a named, auditable author | PR.AA, GV.RR |
 | Log Analytics workspace + Activity Log routing | Central audit trail beyond the 90-day default | DE.CM, PR.PS |
+| `cge-require-data-classification` (Audit) | **Custom.** Every storage and Cosmos account declares what it holds (`public`, `internal`, `confidential`, `restricted`); an unlabeled store shows up as a non-compliant policy state instead of hiding in the inventory | ID.AM |
+| `cge-deny-public-network-restricted` (Deny) | **Custom.** A `restricted`-class (PHI-class) store cannot be created or updated with public network access enabled; binary rule on a self-declared label, so Deny is earned on day one | PR.DS, PR.IR |
+
+## Classification of the pipeline's own stores
+
+The pipeline holds itself to its own custom controls. The Cosmos evidence store, the WORM
+reports account, and the Terraform state account are `confidential`; the two Functions
+runtime scratch accounts are `internal`. Nothing in this sandbox is `restricted`: only
+synthetic data ever lives here, and the `restricted` tier exists to prove the guardrail.
 
 ## Stage 03 — Evidence Store
 
@@ -46,4 +55,5 @@ and it's a first-class criterion on the capstone rubric.
 | `storage.rego` | Pipeline storage below the pipeline's own standard | PR.DS |
 | `policy_identity.rego` | Remediation that silently never runs | PR.PS |
 | `broad_roles.rego` | Owner/Contributor grants in governance code | PR.AA |
+| `classification.rego` (+ 9 unit tests) | **Custom.** A data store with no classification, an unrecognized classification, or a `restricted` store with public network access | ID.AM, PR.DS |
 | `drift.yml` + KQL tripwire | Out-of-band change going unnoticed | DE.CM, DE.AE |
