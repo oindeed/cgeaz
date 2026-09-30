@@ -1,0 +1,31 @@
+name: devcontainer
+
+# Builds the Codespaces lab workstation and runs verify-tools.sh inside it, so a broken
+# image fails here instead of in the middle of a lab. Runs only when the workstation
+# definition changes.
+
+on:
+  push:
+    paths:
+      - ".devcontainer/**"
+      - ".github/workflows/devcontainer.yml"
+  pull_request:
+    paths:
+      - ".devcontainer/**"
+      - ".github/workflows/devcontainer.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: build workstation and verify tools
+        uses: devcontainers/ci@v0.3
+        with:
+          push: never
+          runCmd: bash .devcontainer/verify-tools.sh

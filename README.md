@@ -20,6 +20,13 @@ the next collection.
 
 ## Start here
 
+**No local installs needed.** Open this repo in GitHub Codespaces (Code → Codespaces →
+Create codespace on main). The workstation in `.devcontainer/` builds with every tool
+the labs use, version-pinned and checksum-verified, and CI builds the same image on
+every change to it. Sign in with `az login --use-device-code`, then pick up SETUP.md at
+step 2. Local installs (below) remain fully supported.
+
+
 1. **[docs/SETUP.md](docs/SETUP.md)** — one-time setup (free account, providers,
    regional quirks, cost guardrails). Do not skip it.
 2. **labs/01-sandbox → labs/06-loop** — one lab per course domain, in order.
