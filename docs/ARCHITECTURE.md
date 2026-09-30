@@ -69,7 +69,7 @@ flowchart TB
         X["id-grc-remediation<br/>Monitoring Contributor @ mg-grc-sandbox<br/>Storage Account Contributor @ mg-grc-sandbox<br/>(only when remediation_mode != audit)"]
     end
     subgraph Change["Change the code"]
-        CI["CI OIDC app (fork-scoped federation)<br/>plan + gate on every PR"]
+        CI["CI OIDC app (fork-scoped federation)<br/>GRC Pipeline Planner: plan-only"]
         H["Human reviewer<br/>merges escalations, approves dry-run tasks"]
     end
 
@@ -85,7 +85,7 @@ flowchart TB
 | Collector MI | Read Defender assessments; write to Cosmos | Change any resource; write reports | The recorder of facts cannot shape the story told about them |
 | Reporter MI | Read Cosmos; write report blobs | Read the platform; write evidence | Every report number must come from a stored document, so the reporter is denied any other source |
 | Remediation identity | Write diagnostic settings; flip one storage property | Delete, read data, touch anything outside its whitelist | Filter the Activity Log by this caller and the complete history of automated change comes back |
-| CI OIDC app | Plan and gate every PR; today it holds Contributor at mg-grc (the starter's `arm-your-fork.sh` default) | Exist anywhere but the fork that armed it | Zero stored secrets; the federation names one repo. Known gap: Contributor is broader than planning needs, and a plan-only custom role is the fix |
+| CI OIDC app | Plan and gate every PR; nightly drift plan. Holds **GRC Pipeline Planner** at mg-grc (read plus refresh list actions) and blob data on the state RG | Create, modify, or delete any resource; write RBAC; exist anywhere but the fork that armed it | Zero stored secrets, and a compromised workflow dependency holding the token can look but not touch. Residual risk: it can list keys for the two `internal` runtime accounts, while keys authenticate nothing against evidence (shared keys and Cosmos local auth are off) |
 
 Every secret-shaped thing in this design is an identity instead: the evidence storage account
 disables shared keys, Cosmos disables local auth, and CI exchanges short-lived OIDC tokens.
@@ -108,5 +108,14 @@ disables shared keys, Cosmos disables local auth, and CI exchanges short-lived O
   the same vocabulary before merge, and the pipeline's own stores are classified under it.
   Deny was earned on the second policy because the rule is binary and the label is
   self-declared; the first stays Audit until the inventory is clean.
+- **CI can plan, never apply.** The gate and drift workflows only run `terraform plan`, so
+  the CI identity holds a custom plan-only role instead of Contributor. Every action in
+  those jobs is pinned; conftest is a checksum-verified release, not a third-party action
+  on a mutable ref, because a job holding a cloud token is exactly what a hijacked action
+  tag goes looking for.
+- **The deployer is named, not inferred.** Stage 03 grants its data-plane roles to
+  `deployer_object_id`, falling back to the caller only for a local apply. CI passes the
+  human deployer's ID, so a plan run as the CI identity matches state instead of
+  proposing to move those grants to itself and raising a false drift issue every night.
 - **Synthetic data only.** Nothing in this sandbox is real patient data. The `restricted` tier
   exists to prove the guardrail, not to hold PHI.

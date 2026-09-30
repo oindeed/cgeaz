@@ -39,19 +39,53 @@ for sub in "repo:${GH_USER}/${REPO}:pull_request|pr" "repo:${GH_USER}/${REPO}:re
   }" --output none 2>/dev/null || echo "   (${REPO}-${NAME} already exists)"
 done
 
-echo ">> Roles: Contributor at mg-grc (plan/refresh needs list-keys + config reads;"
-echo "   Contributor cannot write RBAC) + blob data on the state RG"
+# The CI identity only ever runs `terraform plan`. It gets a custom plan-only role
+# (ci-planner-role.json): read everything, plus the handful of list actions a refresh
+# needs. It cannot create, change, or delete a resource, so a compromised workflow
+# dependency holding its token can look but not touch.
+#
+# Residual risk, stated: listKeys lets the planner read keys for the two Functions
+# runtime accounts (classification internal). It cannot use keys against evidence:
+# the evidence account disables shared keys and Cosmos disables local auth, so any
+# listed key authenticates nothing there.
+#
+# Fallback: CI_ROLE=contributor ./arm-your-fork.sh <user> restores the starter's grant.
+# If an armed plan 403s, the error names the one missing action. Add it to
+# ci-planner-role.json by PR rather than widening to Contributor.
+CI_ROLE="${CI_ROLE:-planner}"
+MG_SCOPE="/providers/Microsoft.Management/managementGroups/mg-grc"
+if [ "$CI_ROLE" = "contributor" ]; then
+  echo ">> Roles: Contributor at mg-grc (fallback requested) + blob data on the state RG"
+  ROLE_NAME="Contributor"
+else
+  ROLE_NAME="GRC Pipeline Planner"
+  ROLE_FILE="$(dirname "$0")/ci-planner-role.json"
+  echo ">> Roles: '${ROLE_NAME}' (plan-only custom role) at mg-grc + blob data on the state RG"
+  if az role definition list --custom-role-only true --scope "$MG_SCOPE" \
+       --query "[?roleName=='${ROLE_NAME}'] | length(@)" -o tsv | grep -q '^1$'; then
+    az role definition update --role-definition "$ROLE_FILE" --output none
+  else
+    az role definition create --role-definition "$ROLE_FILE" --output none
+  fi
+  echo "   (new custom roles can take a minute or two to become assignable)"
+  sleep 30
+fi
 az role assignment create --assignee-object-id "$SP_ID" --assignee-principal-type ServicePrincipal \
-  --role "Contributor" --scope "/providers/Microsoft.Management/managementGroups/mg-grc" --output none 2>/dev/null || true
+  --role "$ROLE_NAME" --scope "$MG_SCOPE" --output none \
+  || echo "   !! assignment failed: if the custom role was just created, wait a minute and re-run"
 az role assignment create --assignee-object-id "$SP_ID" --assignee-principal-type ServicePrincipal \
   --role "Storage Blob Data Contributor" \
   --scope "/subscriptions/$SUB_ID/resourceGroups/rg-grc-tfstate" --output none 2>/dev/null || true
+
+# The human who applies stage 03 holds its deployer data-plane grants. CI plans with
+# this ID so it does not try to hand those grants to itself (a false nightly drift).
+DEPLOYER_OID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null || echo "<your Entra object ID>")
 
 STATE_SA=$(grep storage_account_name "$(dirname "$0")/../03-foundation/backend.hcl" 2>/dev/null | tr -d ' "' | cut -d= -f2 || echo "<from backend.hcl>")
 
 cat <<EOF
 
-Done. Add these five VARIABLES (not secrets — see header comment) in YOUR fork:
+Done. Add these six VARIABLES (not secrets — see header comment) in YOUR fork:
 Settings -> Secrets and variables -> Actions -> Variables -> New repository variable
 
   AZURE_CLIENT_ID        $APP_ID
@@ -59,6 +93,7 @@ Settings -> Secrets and variables -> Actions -> Variables -> New repository vari
   AZURE_SUBSCRIPTION_ID  $SUB_ID
   STATE_STORAGE_ACCOUNT  $STATE_SA
   OWNER_EMAIL            <your email>
+  DEPLOYER_OBJECT_ID     $DEPLOYER_OID
 
 Then enable the two workflows in your fork's Actions tab. Never add these to the
 upstream GRCEngClub/cgeaz repo — its workflows are intentionally unarmed.

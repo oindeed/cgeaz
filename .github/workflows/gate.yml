@@ -19,6 +19,7 @@ env:
   ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
   TF_VAR_state_storage_account: ${{ vars.STATE_STORAGE_ACCOUNT }}
   TF_VAR_owner_email: ${{ vars.OWNER_EMAIL }}
+  TF_VAR_deployer_object_id: ${{ vars.DEPLOYER_OBJECT_ID }}
 
 jobs:
   gate:
@@ -36,6 +37,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
 
       - uses: azure/login@v2
         with:
@@ -51,8 +54,17 @@ jobs:
           terraform plan -input=false -out=tf.plan
           terraform show -json tf.plan > plan.json
 
+      # conftest is installed from a pinned, checksum-verified release, not a third-party
+      # action on a mutable ref. This job holds an Azure token; nothing unpinned runs in it.
+      - name: install conftest (pinned + checksum)
+        run: |
+          set -euo pipefail
+          V=0.56.0
+          F=conftest_${V}_Linux_x86_64.tar.gz
+          curl -sSLO "https://github.com/open-policy-agent/conftest/releases/download/v${V}/${F}"
+          curl -sSL "https://github.com/open-policy-agent/conftest/releases/download/v${V}/checksums.txt" \
+            | grep " ${F}$" | sha256sum -c -
+          tar xzf "$F" conftest && sudo mv conftest /usr/local/bin/
+
       - name: OPA gate (conftest)
-        uses: instrumenta/conftest-action@master
-        with:
-          files: stages/${{ matrix.stage }}/plan.json
-          policy: policy
+        run: conftest test stages/${{ matrix.stage }}/plan.json --policy policy/

@@ -60,4 +60,6 @@ synthetic data ever lives here, and the `restricted` tier exists to prove the gu
 | `tier0.yml`: fmt, validate, tflint, checkov | Unformatted, invalid, or misconfigured IaC; every checkov waiver is inline with a reason (register: [CHECKOV-WAIVERS.md](CHECKOV-WAIVERS.md)) | PR.PS, ID.RA |
 | `tier0.yml`: gitleaks (full history) | A stored secret anywhere in the repo's history | PR.AA, PR.DS |
 | `tier0.yml`: conftest verify | Gate rules that do not do what they claim | PR.PS |
+| GRC Pipeline Planner role (`labs/06-loop/ci-planner-role.json`) | CI that could change the environment it is only meant to inspect; replaces Contributor on the CI identity | PR.AA, GV.RR |
+| Pinned, checksum-verified conftest in `gate.yml` | A mutable third-party action executing inside a job that holds a cloud token | GV.SC, PR.PS |
 | `drift.yml` + KQL tripwire | Out-of-band change going unnoticed | DE.CM, DE.AE |
