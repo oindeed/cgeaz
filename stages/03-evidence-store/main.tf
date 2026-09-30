@@ -105,8 +105,7 @@ resource "azurerm_storage_account" "evidence" {
   resource_group_name      = local.evidence_rg
   location                 = var.location
   account_tier             = "Standard"
-  # Evidence outlives a regional outage. GRS at lab scale costs pennies. (CKV_AZURE_206)
-  account_replication_type = "GRS"
+  account_replication_type = "GRS" # evidence outlives a regional outage; pennies at lab scale (CKV_AZURE_206)
   min_tls_version          = "TLS1_2"
 
   # The store's front door has one kind of lock: identity.

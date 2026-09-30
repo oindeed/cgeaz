@@ -32,8 +32,19 @@ jobs:
           terraform_version: "1.9.8"
           terraform_wrapper: false
 
+      # On failure, each unformatted file becomes an error annotation carrying its diff,
+      # readable from the PR and the checks API without opening the raw log.
       - name: fmt (whole tree)
-        run: terraform fmt -check -recursive -diff stages/
+        run: |
+          if terraform fmt -check -recursive stages/ > unformatted.txt; then
+            echo "fmt clean"
+            exit 0
+          fi
+          while read -r f; do
+            d=$(terraform fmt -diff -check "$f" | head -c 4000 | sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error file=${f},title=terraform fmt::${d}"
+          done < unformatted.txt
+          exit 1
 
       - name: validate (every stage, no backend)
         run: |
