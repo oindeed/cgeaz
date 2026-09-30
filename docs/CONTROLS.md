@@ -32,6 +32,7 @@ synthetic data ever lives here, and the `restricted` tier exists to prove the gu
 | WORM immutability policy on `reports` | Artifacts tamper-proof by platform guarantee | PR.DS |
 | Shared keys disabled + data-plane RBAC | Identity or nothing; no credentials to steal or rotate | PR.AA |
 | Collector Function (Security Reader + Cosmos write only) | Continuous control-test capture with lineage; cannot alter what it observes | DE.CM, ID.RA |
+| `evidence_blob_logs` diagnostic setting | Every read, write, and delete against evidence blobs is logged and attributed in the GRC workspace; the WORM failed-delete proof is a queryable event | DE.CM, PR.PS |
 | Collector/reporter identity split | The recorder of facts cannot author the narrative — SoD by role scopes | PR.AA, GV.RR |
 
 ## Stage 04 — Reporting
@@ -56,4 +57,7 @@ synthetic data ever lives here, and the `restricted` tier exists to prove the gu
 | `policy_identity.rego` | Remediation that silently never runs | PR.PS |
 | `broad_roles.rego` | Owner/Contributor grants in governance code | PR.AA |
 | `classification.rego` (+ 9 unit tests) | **Custom.** A data store with no classification, an unrecognized classification, or a `restricted` store with public network access | ID.AM, PR.DS |
+| `tier0.yml`: fmt, validate, tflint, checkov | Unformatted, invalid, or misconfigured IaC; every checkov waiver is inline with a reason (register: [CHECKOV-WAIVERS.md](CHECKOV-WAIVERS.md)) | PR.PS, ID.RA |
+| `tier0.yml`: gitleaks (full history) | A stored secret anywhere in the repo's history | PR.AA, PR.DS |
+| `tier0.yml`: conftest verify | Gate rules that do not do what they claim | PR.PS |
 | `drift.yml` + KQL tripwire | Out-of-band change going unnoticed | DE.CM, DE.AE |

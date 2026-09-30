@@ -21,6 +21,10 @@ resource "random_string" "suffix" {
 # --- Cosmos DB: the evidence database we OWN. Serverless; pennies at lab scale. ---
 
 resource "azurerm_cosmosdb_account" "evidence" {
+  #checkov:skip=CKV_AZURE_140:False positive. Local auth IS disabled via local_authentication_enabled = false (azurerm v4 rename); the rule still reads the deprecated attribute.
+  #checkov:skip=CKV_AZURE_101:Y1 Consumption Functions cannot reach a private endpoint. Compensating: local auth off, Entra ID data-plane RBAC only, classification = confidential (private networking is required at restricted).
+  #checkov:skip=CKV_AZURE_99:Same constraint as CKV_AZURE_101. Consumption outbound IPs are shared and change, so an IP filter adds no real boundary; identity is the boundary.
+  #checkov:skip=CKV_AZURE_100:Platform-managed keys at the confidential tier. CMK adds Key Vault and rotation operations the sandbox does not justify; restricted-tier production stores would use CMK.
   name                = "cosmos-grc-evidence-${random_string.suffix.result}"
   location            = var.location
   resource_group_name = local.evidence_rg
@@ -31,6 +35,10 @@ resource "azurerm_cosmosdb_account" "evidence" {
   # local_authentication_disabled was deprecated in favour of local_authentication_enabled
   # (removed in azurerm v5.0); the boolean inverts, so disabled=true becomes enabled=false.
   local_authentication_enabled = false
+
+  # Account keys cannot change account metadata either (containers, throughput, indexing).
+  # Every schema change goes through ARM, as an identity, in the Activity Log. (CKV_AZURE_132)
+  access_key_metadata_writes_enabled = false
 
   capabilities {
     name = "EnableServerless"
@@ -84,11 +92,16 @@ resource "azurerm_cosmosdb_sql_container" "mappings" {
 # --- Evidence artifact storage: WORM reports container, zero shared keys. ---
 
 resource "azurerm_storage_account" "evidence" {
+  #checkov:skip=CKV_AZURE_59:Reporter Function (Y1 Consumption) writes over the public endpoint; Consumption has no VNet integration. Compensating: shared keys off, Entra ID only, no anonymous access, TLS 1.2.
+  #checkov:skip=CKV2_AZURE_33:Same constraint as CKV_AZURE_59. Private endpoints are the production move alongside Flex Consumption or Premium plans.
+  #checkov:skip=CKV2_AZURE_1:Platform-managed keys at the confidential tier; see CKV_AZURE_100 on the Cosmos account for the same reasoning.
+  #checkov:skip=CKV_AZURE_33:Queue service is unused on the evidence account. Blob access logging is on via azurerm_monitor_diagnostic_setting.evidence_blob_logs.
   name                     = "stgrcevid${random_string.suffix.result}"
   resource_group_name      = local.evidence_rg
   location                 = var.location
   account_tier             = "Standard"
-  account_replication_type = "LRS"
+  # Evidence outlives a regional outage. GRS at lab scale costs pennies. (CKV_AZURE_206)
+  account_replication_type = "GRS"
   min_tls_version          = "TLS1_2"
 
   # The store's front door has one kind of lock: identity.
@@ -97,12 +110,40 @@ resource "azurerm_storage_account" "evidence" {
 
   blob_properties {
     versioning_enabled = true
+
+    # Belt and braces behind WORM: anything outside the immutable container is still
+    # recoverable for 14 days after a delete. (CKV2_AZURE_38)
+    delete_retention_policy {
+      days = 14
+    }
+    container_delete_retention_policy {
+      days = 14
+    }
   }
 
   tags = local.evidence_tags
 }
 
+# Who read, wrote, or tried to delete evidence, routed to the GRC workspace. This is where
+# the failed-delete WORM proof shows up as a logged, attributed event, not a screenshot.
+resource "azurerm_monitor_diagnostic_setting" "evidence_blob_logs" {
+  name                       = "ds-evidence-blob-to-grc"
+  target_resource_id         = "${azurerm_storage_account.evidence.id}/blobServices/default"
+  log_analytics_workspace_id = data.terraform_remote_state.foundation.outputs.log_analytics_workspace_id
+
+  enabled_log {
+    category = "StorageRead"
+  }
+  enabled_log {
+    category = "StorageWrite"
+  }
+  enabled_log {
+    category = "StorageDelete"
+  }
+}
+
 resource "azurerm_storage_container" "reports" {
+  #checkov:skip=CKV2_AZURE_21:Rule looks for classic Storage Insights. Blob read/write/delete logging is on via azurerm_monitor_diagnostic_setting.evidence_blob_logs.
   name               = "reports"
   storage_account_id = azurerm_storage_account.evidence.id
 }

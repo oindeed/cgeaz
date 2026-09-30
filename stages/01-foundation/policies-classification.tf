@@ -55,7 +55,7 @@ resource "azurerm_policy_definition" "require_data_classification" {
   })
 
   policy_rule = jsonencode({
-    if = {
+    "if" = {
       allOf = [
         {
           field = "type"
@@ -101,7 +101,7 @@ resource "azurerm_policy_definition" "deny_public_network_restricted" {
   })
 
   policy_rule = jsonencode({
-    if = {
+    "if" = {
       allOf = [
         { field = "tags['${local.classification_tag}']", equals = "restricted" },
         {

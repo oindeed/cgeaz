@@ -1,0 +1,139 @@
+name: tier0
+
+# Tier 0: the checks every change must pass before anyone looks at a plan.
+# No cloud credentials, no state, no OIDC: this runs on every push and PR from the
+# first commit, long before the fork is armed in Lab 6. It is the rubric's IaC-quality
+# floor (fmt, validate, tflint, checkov) plus the two things that auto-fail a capstone
+# outright if they slip: stored secrets and a gate whose rules do not do what they claim.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tier0-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terraform:
+    name: terraform fmt + validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: fmt (whole tree)
+        run: terraform fmt -check -recursive -diff stages/
+
+      - name: validate (every stage, no backend)
+        run: |
+          set -euo pipefail
+          for d in stages/*/; do
+            echo "::group::validate $d"
+            terraform -chdir="$d" init -backend=false -input=false -no-color
+            terraform -chdir="$d" validate -no-color
+            echo "::endgroup::"
+          done
+
+  tflint:
+    name: tflint (azurerm ruleset)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.53.0
+
+      - name: init plugins
+        run: tflint --init --config "$GITHUB_WORKSPACE/.tflint.hcl"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: lint every stage
+        run: |
+          set -euo pipefail
+          for d in stages/*/; do
+            echo "::group::tflint $d"
+            tflint --chdir="$d" --config "$GITHUB_WORKSPACE/.tflint.hcl" --format compact
+            echo "::endgroup::"
+          done
+
+  checkov:
+    name: checkov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: install checkov
+        run: pip install --quiet "checkov==3.2.*"
+
+      # Every accepted finding is waived inline, next to the resource, with its reason.
+      # A new finding with no waiver fails the build. See docs/CHECKOV-WAIVERS.md.
+      - name: scan stages
+        run: checkov --config-file .checkov.yaml
+
+  gate-tests:
+    name: gate rules (conftest verify)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install conftest
+        run: |
+          set -euo pipefail
+          curl -sSL -o conftest.tgz \
+            https://github.com/open-policy-agent/conftest/releases/download/v0.56.0/conftest_0.56.0_Linux_x86_64.tar.gz
+          tar xzf conftest.tgz conftest
+          sudo mv conftest /usr/local/bin/
+
+      - name: fmt + unit tests
+        run: |
+          conftest fmt --check policy/
+          conftest verify --policy policy/
+
+  secrets:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # scan every commit, not just the tip
+
+      - name: install gitleaks
+        run: |
+          set -euo pipefail
+          curl -sSL -o gitleaks.tgz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.21.2/gitleaks_8.21.2_linux_x64.tar.gz
+          tar xzf gitleaks.tgz gitleaks
+          sudo mv gitleaks /usr/local/bin/
+
+      - name: scan full history
+        run: gitleaks detect --source . --redact --verbose --exit-code 1
+
+  functions:
+    name: functions (compile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: byte-compile every function app
+        run: python -m compileall -q functions/
