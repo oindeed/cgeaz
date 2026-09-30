@@ -57,6 +57,11 @@ echo "== Operations =="
 [ -f .github/workflows/drift.yml ] && ok "drift workflow present" || bad "drift workflow missing"
 ls policy/*.rego >/dev/null 2>&1 && ok "OPA gate rules present" || bad "no policy/*.rego rules"
 if command -v conftest >/dev/null 2>&1; then
+  if conftest verify --policy policy/ >/dev/null 2>&1; then
+    ok "gate rule unit tests pass (conftest verify)"
+  else
+    bad "gate rule unit tests fail (run: conftest verify --policy policy/)"
+  fi
   echo "  (tip: prove the gate blocks — plan a public storage account and conftest it)"
 else
   echo "  (conftest not installed locally — CI still runs it)"

@@ -21,6 +21,7 @@ env:
   ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
   TF_VAR_state_storage_account: ${{ vars.STATE_STORAGE_ACCOUNT }}
   TF_VAR_owner_email: ${{ vars.OWNER_EMAIL }}
+  TF_VAR_deployer_object_id: ${{ vars.DEPLOYER_OBJECT_ID }}
 
 jobs:
   drift:
@@ -39,6 +40,8 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
 
       - uses: azure/login@v2
         with:

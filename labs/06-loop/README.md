@@ -60,7 +60,7 @@ apply to every CI system you ever assess).
 **Expected output** (tail; your IDs differ):
 
 ```
-Done. Add these five VARIABLES (not secrets — see header comment) in YOUR fork:
+Done. Add these six VARIABLES (not secrets — see header comment) in YOUR fork:
 Settings -> Secrets and variables -> Actions -> Variables -> New repository variable
 
   AZURE_CLIENT_ID        <guid>
@@ -68,7 +68,14 @@ Settings -> Secrets and variables -> Actions -> Variables -> New repository vari
   AZURE_SUBSCRIPTION_ID  <guid>
   STATE_STORAGE_ACCOUNT  stgrctfstateXXXXXXXX
   OWNER_EMAIL            <your email>
+  DEPLOYER_OBJECT_ID     <guid>
 ```
+
+The CI identity gets **GRC Pipeline Planner**, a plan-only custom role
+(`ci-planner-role.json`), not Contributor. It can read and refresh, never change. If
+an armed plan returns 403, the error names the missing action: add that one action to
+the role file by PR. `CI_ROLE=contributor ./arm-your-fork.sh <user>` restores the
+starter's broader grant if you need to unblock while you diagnose.
 
 They're variables, not secrets, because OIDC stores no credential — the IDs grant
 nothing without the federation match, and the federation names your fork alone.

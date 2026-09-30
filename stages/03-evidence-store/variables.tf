@@ -32,3 +32,9 @@ variable "functions_location" {
   type        = string
   default     = "centralus"
 }
+
+variable "deployer_object_id" {
+  description = "Entra object ID of the human deployer who holds this stage's data-plane grants. Null uses the current caller (local apply); CI sets it from DEPLOYER_OBJECT_ID."
+  type        = string
+  default     = null
+}

@@ -1,0 +1,21 @@
+{
+  "Name": "GRC Pipeline Planner",
+  "IsCustom": true,
+  "Description": "Plan-only role for the fork's CI identity (compliance-gate, drift-detection). Reads everything under mg-grc and performs only the list actions a terraform refresh needs. Cannot create, modify, or delete any resource, and cannot write RBAC.",
+  "Actions": [
+    "*/read",
+    "*/register/action",
+    "Microsoft.Storage/storageAccounts/listKeys/action",
+    "Microsoft.DocumentDB/databaseAccounts/listKeys/action",
+    "Microsoft.DocumentDB/databaseAccounts/readonlykeys/action",
+    "Microsoft.DocumentDB/databaseAccounts/listConnectionStrings/action",
+    "Microsoft.Web/sites/config/list/action",
+    "Microsoft.OperationalInsights/workspaces/sharedKeys/action"
+  ],
+  "NotActions": [],
+  "DataActions": [],
+  "NotDataActions": [],
+  "AssignableScopes": [
+    "/providers/Microsoft.Management/managementGroups/mg-grc"
+  ]
+}

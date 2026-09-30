@@ -1,0 +1,11 @@
+# checkov config for tier0.yml and local runs: `checkov --config-file .checkov.yaml`
+# No global skips on purpose. Every accepted finding is waived inline on the resource
+# it applies to (#checkov:skip=ID:reason), so the reason travels with the code and a
+# reviewer sees it in the same diff. The register is docs/CHECKOV-WAIVERS.md.
+directory:
+  - stages
+framework:
+  - terraform
+compact: true
+quiet: true
+download-external-modules: false
