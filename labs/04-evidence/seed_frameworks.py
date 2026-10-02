@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Seed the frameworks container with the NIST CSF 2.0 structure.
+"""Seed the frameworks container with the NIST CSF 2.0 structure, and the mappings
+container with the crosswalk for every Azure Policy control this pipeline deploys.
 
 Run once after deploying stages/03-evidence-store:
 
@@ -8,7 +9,11 @@ Run once after deploying stages/03-evidence-store:
         python3 seed_frameworks.py
 
 Authenticates as YOU (az login) — the deployer's Cosmos data role comes from the stage.
-The mappings container gets its crosswalk rows in Domain 5's lab.
+
+The mapping rows are the crosswalk as data: the collector reads them to give each Azure
+Policy finding its display name, severity (which sets the POA&M SLA), and CSF 2.0
+categories. They mirror docs/CONTROLS.md; change both in the same PR. Re-running this
+script is safe: every write is an upsert on a fixed ID.
 """
 
 import os
@@ -27,17 +32,46 @@ CSF2_FUNCTIONS = {
 }
 
 
+# Azure Policy controls deployed by stages/01-foundation and stages/06-enforcement.
+# controlId is the policy definition name, as it appears in policy compliance states.
+POLICY_CONTROLS = [
+    ("cge-require-env-tag-rg", "Resource groups must carry an env tag", "Low", ["ID.AM"]),
+    ("cge-deny-public-blob", "Storage accounts must not allow public blob access", "High", ["PR.DS"]),
+    ("cge-dine-storage-diagnostics", "Storage accounts must route diagnostics to the GRC workspace", "Medium", ["PR.PS", "DE.CM"]),
+    ("cge-require-data-classification", "Data stores must carry a valid data-classification tag", "Medium", ["ID.AM"]),
+    ("cge-deny-public-network-restricted", "Restricted-class data stores must disable public network access", "High", ["PR.DS", "PR.IR"]),
+    ("cge-fix-public-blob", "Remediate: disable public blob access on storage accounts", "High", ["PR.DS", "RS.MI"]),
+]
+
+
+def seed_mappings(db) -> int:
+    container = db.get_container_client("mappings")
+    for control_id, display_name, severity, categories in POLICY_CONTROLS:
+        container.upsert_item(
+            {
+                "id": f"azure-policy.{control_id}",
+                "frameworkId": "nist-csf-2.0",
+                "type": "control-mapping",
+                "controlSource": "azure-policy",
+                "controlId": control_id,
+                "displayName": display_name,
+                "severity": severity,
+                "categories": categories,
+            }
+        )
+    return len(POLICY_CONTROLS)
+
+
 def main() -> int:
     endpoint = os.environ.get("COSMOS_ENDPOINT")
     if not endpoint:
         print("Set COSMOS_ENDPOINT (see docstring).", file=sys.stderr)
         return 1
 
-    container = (
-        CosmosClient(endpoint, DefaultAzureCredential())
-        .get_database_client(os.environ.get("COSMOS_DATABASE", "grc"))
-        .get_container_client("frameworks")
+    db = CosmosClient(endpoint, DefaultAzureCredential()).get_database_client(
+        os.environ.get("COSMOS_DATABASE", "grc")
     )
+    container = db.get_container_client("frameworks")
 
     written = 0
     for func_id, (name, categories) in CSF2_FUNCTIONS.items():
@@ -62,7 +96,8 @@ def main() -> int:
             "functions": list(CSF2_FUNCTIONS.keys()),
         }
     )
-    print(f"seeded {written + 1} framework documents into {endpoint}")
+    mapped = seed_mappings(db)
+    print(f"seeded {written + 1} framework documents and {mapped} control mappings into {endpoint}")
     return 0
 
 

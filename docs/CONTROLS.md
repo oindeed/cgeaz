@@ -31,7 +31,10 @@ synthetic data ever lives here, and the `restricted` tier exists to prove the gu
 | Cosmos DB (assessments / frameworks / mappings) | Owned evidence schema; collect once, crosswalk to every framework | GV.OV, ID.RA |
 | WORM immutability policy on `reports` | Artifacts tamper-proof by platform guarantee | PR.DS |
 | Shared keys disabled + data-plane RBAC | Identity or nothing; no credentials to steal or rotate | PR.AA |
-| Collector Function (Security Reader + Cosmos write only) | Continuous control-test capture with lineage; cannot alter what it observes | DE.CM, ID.RA |
+| Collector Function (Security Reader + GRC Policy State Reader + Cosmos write only) | Continuous control-test capture with lineage from two sources, Defender assessments and Azure Policy compliance for this pipeline's own assignments, under one `runId` per sweep; cannot alter what it observes | DE.CM, ID.RA |
+| GRC Policy State Reader (custom role) | The collector can query policy compliance and nothing else: no scans, exemptions, or assignment changes | PR.AA |
+| `runs` ledger container | One record per sweep with start, completion, per-source counts, and outcome, including failures; the accumulating run history | DE.CM, GV.OV |
+| `mappings` control rows (seeded by `seed_frameworks.py`) | The crosswalk as data: display name, severity (sets the POA&M SLA), and CSF 2.0 categories for every policy in this file | GV.OV, ID.RA |
 | `evidence_blob_logs` diagnostic setting | Every read, write, and delete against evidence blobs is logged and attributed in the GRC workspace; the WORM failed-delete proof is a queryable event | DE.CM, PR.PS |
 | Collector/reporter identity split | The recorder of facts cannot author the narrative — SoD by role scopes | PR.AA, GV.RR |
 
@@ -39,8 +42,8 @@ synthetic data ever lives here, and the `restricted` tier exists to prove the gu
 
 | Component | What it does | CSF 2.0 |
 |---|---|---|
-| POA&M generator (daily, SLA-dated) | Weakness management with owners and dates, from the store only | ID.IM, GV.RM |
-| SAR generator (weekly) | Assessment reporting where every number traces to a stored document | ID.RA, GV.OV |
+| POA&M generator (daily, SLA-dated) | Weakness management with owners and dates for both sources, pinned to the latest succeeded run | ID.IM, GV.RM |
+| SAR generator (weekly) | Assessment reporting where every number traces to a stored document, including a 7-day collection history read from the `runs` ledger | ID.RA, GV.OV |
 
 ## Stage 06 — Enforcement
 

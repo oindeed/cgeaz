@@ -94,6 +94,17 @@ resource "azurerm_cosmosdb_sql_container" "mappings" {
   partition_key_paths = ["/frameworkId"]
 }
 
+# runs: one record per collection sweep (started, completed, per-source counts, outcome).
+# Findings are upserted, so `assessments` holds the latest state of each; the ledger is
+# the history that proves collection ran every night, and the reports pin to it.
+resource "azurerm_cosmosdb_sql_container" "runs" {
+  name                = "runs"
+  resource_group_name = local.evidence_rg
+  account_name        = azurerm_cosmosdb_account.evidence.name
+  database_name       = azurerm_cosmosdb_sql_database.grc.name
+  partition_key_paths = ["/subscriptionId"]
+}
+
 # --- Evidence artifact storage: WORM reports container, zero shared keys. ---
 
 resource "azurerm_storage_account" "evidence" {
