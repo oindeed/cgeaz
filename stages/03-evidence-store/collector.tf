@@ -77,6 +77,7 @@ resource "azurerm_linux_function_app" "collectors" {
     "COSMOS_ENDPOINT"                = azurerm_cosmosdb_account.evidence.endpoint
     "COSMOS_DATABASE"                = azurerm_cosmosdb_sql_database.grc.name
     "SUBSCRIPTION_ID"                = local.subscription
+    "POLICY_ASSIGNMENTS"             = join(",", var.collected_policy_assignments)
     "SCM_DO_BUILD_DURING_DEPLOYMENT" = "true"
     "ENABLE_ORYX_BUILD"              = "true"
   }
@@ -101,4 +102,33 @@ resource "azurerm_cosmosdb_sql_role_assignment" "collector_cosmos_write" {
   role_definition_id  = "${azurerm_cosmosdb_account.evidence.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
   principal_id        = azurerm_linux_function_app.collectors.identity[0].principal_id
   scope               = azurerm_cosmosdb_account.evidence.id
+}
+
+# --- Policy compliance: read-only, policy states only. ---
+# Security Reader covers Defender but not Policy Insights. Rather than widen the collector
+# to Reader (read everything), it gets a custom role holding exactly one capability:
+# query policy compliance results. It cannot trigger scans, write exemptions, or change
+# any assignment, so the recorder still cannot alter what it observes.
+
+# blast radius: none. Read-only role, no write, delete, or data actions.
+# rollback: remove the assignment; the collector's next sweep fails closed and the
+# failure is recorded in the runs ledger.
+resource "azurerm_role_definition" "policy_state_reader" {
+  name        = "GRC Policy State Reader (${var.environment})"
+  scope       = "/subscriptions/${local.subscription}"
+  description = "Query Azure Policy compliance states. Nothing else. Held by the CGE-AZ collector."
+
+  permissions {
+    actions = ["Microsoft.PolicyInsights/policyStates/*/read"]
+  }
+
+  assignable_scopes = ["/subscriptions/${local.subscription}"]
+}
+
+# A brand-new custom role can take a minute to become assignable. If the first apply
+# fails here with RoleDefinitionDoesNotExist, wait a minute and re-run apply.
+resource "azurerm_role_assignment" "collector_policy_states" {
+  scope              = "/subscriptions/${local.subscription}"
+  role_definition_id = azurerm_role_definition.policy_state_reader.role_definition_resource_id
+  principal_id       = azurerm_linux_function_app.collectors.identity[0].principal_id
 }

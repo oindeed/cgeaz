@@ -137,7 +137,7 @@ jobs:
         run: gitleaks detect --source . --redact --verbose --exit-code 1
 
   functions:
-    name: functions (compile)
+    name: functions (compile + unit tests)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -148,3 +148,12 @@ jobs:
 
       - name: byte-compile every function app
         run: python -m compileall -q functions/
+
+      # Fakes stand in for ARM and Cosmos: no credentials, no network. Proves one sweep
+      # writes both sources under one runId, the ledger records success and failure,
+      # and the reports pin to the latest succeeded run.
+      - name: unit tests
+        run: |
+          pip install --quiet -r functions/collect_assessments/requirements.txt \
+            -r functions/reports/requirements.txt pytest
+          python -m pytest -q tests/functions

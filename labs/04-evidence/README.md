@@ -165,7 +165,7 @@ COSMOS_ENDPOINT=$(cd ../../stages/03-evidence-store && terraform output -raw cos
 **Expected output:**
 
 ```
-seeded 7 framework documents into https://cosmos-grc-evidence-XXXXXX.documents.azure.com:443/
+seeded 7 framework documents and 6 control mappings into https://cosmos-grc-evidence-XXXXXX.documents.azure.com:443/
 ```
 
 This also proves the Cosmos data-plane write path with YOUR identity (the stage
@@ -187,13 +187,23 @@ curl "https://$APP.azurewebsites.net/api/collect?code=$KEY"
 **Expected output** (one line; your run ID, count, and timestamp differ):
 
 ```
-run <uuid>: <N> documents at <ISO timestamp>
+run <uuid>: <N> documents (defender <D>, azurePolicy <P>) at <ISO timestamp>
 ```
 
-> **`0 documents` is a valid, clean run** if Defender still hasn't finished its first
+One sweep, two sources, one `runId`: Defender assessments plus Azure Policy compliance
+states for this pipeline's own assignments (`cge-grc-baseline`, `cge-fix-public-blob`).
+The sweep also writes one record to the `runs` container, which is the run history
+the reports and the grader read.
+
+> **`defender 0` is a valid, clean run** if Defender still hasn't finished its first
 > assessment cycle (up to ~24h on a brand-new subscription; see Lab 2). Nothing is
 > broken. Come back tomorrow, hit the same URL, and the count goes positive. The
-> nightly timer (05:00 UTC) will also do it for you.
+> nightly timer (05:00 UTC) will also do it for you. `azurePolicy` is positive from
+> the first run, because Lab 3's policies have already evaluated your resources.
+>
+> **If the run fails with a 403 on `policyStates`:** the collector's custom
+> `GRC Policy State Reader` role assignment is still propagating. Wait a few minutes
+> and hit the URL again. The failed attempt is recorded in `runs` with its error.
 
 ### 6. The trace (the point of everything)
 

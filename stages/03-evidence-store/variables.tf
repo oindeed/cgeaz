@@ -38,3 +38,9 @@ variable "deployer_object_id" {
   type        = string
   default     = null
 }
+
+variable "collected_policy_assignments" {
+  description = "Azure Policy assignment names whose compliance states the collector records alongside Defender assessments."
+  type        = list(string)
+  default     = ["cge-grc-baseline", "cge-fix-public-blob"]
+}
