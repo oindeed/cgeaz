@@ -151,3 +151,45 @@ def test_defender_doc_id_unchanged_from_starter(collector):
     import hashlib
     doc = collector.defender_doc(DEFENDER_PAGE["value"][0], SUB, "r", "t")
     assert doc["id"] == hashlib.sha256(f"assess-1|{SEED}".encode()).hexdigest()[:32]
+
+
+def test_arm_session_retries_transient_failures(collector):
+    adapter = collector.arm_session().get_adapter("https://management.azure.com")
+    retry = adapter.max_retries
+    assert retry.total == 5 and retry.backoff_factor == 2
+    assert {429, 500, 502, 503, 504} <= set(retry.status_forcelist)
+    assert {"GET", "POST"} <= set(retry.allowed_methods)
+    assert retry.respect_retry_after_header and not retry.raise_on_status
+
+
+def test_arm_session_recovers_from_one_500(collector):
+    """End to end through urllib3: a 500 then a 200 yields the 200, on the real adapter."""
+    import http.server, json, threading
+
+    hits = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append(self.path)
+            code, body = (500, b"{}") if len(hits) == 1 else (200, json.dumps({"value": []}).encode())
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        session = collector.arm_session()
+        session.trust_env = False  # talk to the local server directly, never via a proxy
+        session.mount("http://", session.get_adapter("https://x"))
+        retry = session.get_adapter("http://x").max_retries
+        session.get_adapter("http://x").max_retries = retry.new(backoff_factor=0)
+        resp = session.get(f"http://127.0.0.1:{server.server_port}/assessments", timeout=10)
+        assert resp.status_code == 200 and len(hits) == 2
+    finally:
+        server.shutdown()

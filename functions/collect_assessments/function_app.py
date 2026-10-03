@@ -29,6 +29,8 @@ import azure.functions as func
 import requests
 from azure.cosmos import CosmosClient
 from azure.identity import DefaultAzureCredential
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 app = func.FunctionApp()
 
@@ -44,6 +46,29 @@ POLICY_STATUS = {
 }
 
 DEFAULT_SEVERITY = "Medium"
+
+# Transient ARM failures (throttling, 5xx) are retried with exponential backoff before a
+# sweep is declared failed. Validated need: on 2026-10-03 the Defender assessments API
+# returned a one-off 500 and the identical call succeeded 60 seconds later. Both calls
+# the collector makes are reads (the policyStates POST is a query), so retrying is safe.
+RETRY = Retry(
+    total=5,
+    connect=3,
+    read=3,
+    status=5,
+    backoff_factor=2,  # 0s, 4s, 8s, 16s, 32s between attempts: about a minute in total
+    status_forcelist=(429, 500, 502, 503, 504),
+    allowed_methods=frozenset({"GET", "POST"}),
+    respect_retry_after_header=True,
+    raise_on_status=False,  # the final response reaches raise_for_status(), so the
+    # ledger records the real HTTP error rather than a urllib3 wrapper
+)
+
+
+def arm_session() -> requests.Session:
+    session = requests.Session()
+    session.mount("https://", HTTPAdapter(max_retries=RETRY))
+    return session
 
 
 def _now() -> str:
@@ -247,7 +272,7 @@ def _collect(trigger: str) -> dict:
     db = CosmosClient(os.environ["COSMOS_ENDPOINT"], credential).get_database_client(
         os.environ["COSMOS_DATABASE"]
     )
-    with requests.Session() as session:
+    with arm_session() as session:
         return run_collection(
             session=session,
             token=token,
