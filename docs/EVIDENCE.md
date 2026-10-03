@@ -95,6 +95,17 @@ Runs collected before PR #12, including `b3a15e0b`, exist only in the latest-sta
 snapshots exist; the first sweep after PR #12 deploys is the first run that reproduces
 indefinitely.
 
+**First reproducible run, 2026-10-03 19:52 UTC** (after PR #12 deployed):
+
+| Artifact | runId | Count |
+|---|---|---|
+| Collection | `6b565546-3422-40b9-a34e-4cf1f7911dc9` | 32 documents (Defender 2, Azure Policy 30) |
+| `poam-2026-10-03T195304Z.json` | same | 2 items |
+| `sar-2026-10-03T195307Z.md` | same | 2 findings; 8 sweeps in the 7-day history |
+| `snapshots`, `COUNT(1) ... status = "Unhealthy"` for that runId | same | **2**, run 19:56 UTC |
+
+Re-run of the same snapshot query after at least four nightly sweeps: recorded in section 3.
+
 ## 5. Past reports cannot be changed
 
 | Item | Value |
@@ -145,7 +156,7 @@ Defender finding is a documented risk acceptance ([CONTROLS.md](CONTROLS.md#risk
 
 | Detector | Question | Evidence |
 |---|---|---|
-| `drift.yml` (all five stages from PR #13) | Does reality match the code? | Found and fixed one real drift in stage 03 (an app setting that the zip deploy deletes; PR #5). On 2026-10-03 13:07 UTC it ran green during the Lab 6 out-of-band change, which it should have caught. Root cause and fix: PR #10. **Pending, next Cloud Shell session:** dispatch the workflow after PR #10 merges and before stage 01 is applied; stage 01 must go red with the new resources as drift and open an issue, then go green after the apply. Run URLs and the issue number are recorded here when done |
+| `drift.yml` (all five stages from PR #13) | Does reality match the code? | Found and fixed one real drift in stage 03 (an app setting that the zip deploy deletes; PR #5). On 2026-10-03 13:07 UTC it ran green during the Lab 6 out-of-band change, which it should have caught; root cause and fix in PR #10. **Proof after the fix:** with PRs #10 to #13 merged and nothing yet applied, the [18:04 UTC run](https://github.com/oindeed/cgeaz/actions/runs/37142810901) went red on exactly the four stages whose code was ahead of reality and opened issues [#14](https://github.com/oindeed/cgeaz/issues/14) (01: 3 to add), [#15](https://github.com/oindeed/cgeaz/issues/15) (02: 1 to add, 1 to destroy), [#16](https://github.com/oindeed/cgeaz/issues/16) (03: 6 to add, 1 to destroy) and [#17](https://github.com/oindeed/cgeaz/issues/17) (04: 1 to add, 1 to change, 1 to destroy); stage 06, unchanged, stayed green. Each issue's plan matched the apply that followed. After the applies, the [19:41 UTC run](https://github.com/oindeed/cgeaz/actions/runs/37148806618) was green on all five stages |
 | `tripwire.tf` | Who is touching reality? | Hourly alert on administrative writes by any caller other than the remediation identity (PR #10). **Pending, next Cloud Shell session:** the stage 01 apply that deploys it is itself a human administrative write, so the first evaluation after it must fire and name the caller. Alert time and caller are recorded here when done |
 
 ## 8. The CI identity can plan but not change anything
