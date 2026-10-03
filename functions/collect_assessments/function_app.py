@@ -36,7 +36,7 @@ import uuid
 import azure.functions as func
 import requests
 from azure.cosmos import CosmosClient
-from azure.cosmos.exceptions import CosmosResourceNotFoundError
+from azure.cosmos.exceptions import CosmosResourceExistsError, CosmosResourceNotFoundError
 from azure.identity import DefaultAzureCredential
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -238,9 +238,14 @@ def evidence_writer(assessments, snapshots):
     def write(doc: dict) -> None:
         doc["firstSeenAt"] = _first_seen(assessments, doc)
         assessments.upsert_item(doc)
-        # Same id, partitioned by runId: unique per (run, finding), and a re-delivered
-        # write inside one sweep is idempotent rather than a duplicate.
-        snapshots.upsert_item(dict(doc))
+        # Create, never upsert: same id, partitioned by runId, so each (run, finding) is
+        # written exactly once. The collector's role on this container grants create and
+        # read only, so even this code could not overwrite a past run. A re-delivered
+        # write inside one sweep hits 409 and is skipped: idempotent, not a duplicate.
+        try:
+            snapshots.create_item(dict(doc))
+        except CosmosResourceExistsError:
+            pass
 
     return write
 

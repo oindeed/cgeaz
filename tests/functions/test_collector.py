@@ -241,3 +241,15 @@ def test_first_seen_carries_forward_while_unhealthy_and_resets_when_cleared(coll
     kw["session"] = Session([DEFENDER_PAGE], [POLICY_PAGE_1, POLICY_PAGE_2])
     recur = collector.run_collection(**kw)
     assert assessments.items[seed_id]["firstSeenAt"] == recur["collectedAt"]
+
+
+def test_snapshot_write_is_create_only_and_redelivery_is_idempotent(collector, fakes):
+    from conftest import FakeSnapshots
+    Container, _ = fakes
+    snaps = FakeSnapshots()
+    write = collector.evidence_writer(Container(), snaps)
+    doc = {"id": "x", "runId": "r1", "subscriptionId": SUB, "status": "Healthy",
+           "collectedAt": "2026-10-04T05:00:00+00:00"}
+    write(dict(doc))
+    write(dict(doc))  # re-delivered inside the same sweep: 409, skipped
+    assert len(snaps.items) == 1

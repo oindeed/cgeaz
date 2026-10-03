@@ -151,3 +151,10 @@ def test_poam_due_date_runs_from_first_seen(reports, fakes, monkeypatch):
     b = next(i for i in items if i["controlId"] == "cge-require-data-classification")
     assert b["firstSeen"] == "2026-09-01" and b["scheduledCompletion"] == "2026-11-30"  # Medium: 90 days
     assert {i["owner"] for i in items} == {"GRC Program Owner"}
+
+
+def test_clean_run_with_snapshot_reports_zero_not_fallback(reports, fakes):
+    from conftest import FakeSnapshots
+    store, _ = _store(fakes)
+    store["snapshots"] = FakeSnapshots([{"id": "a", "runId": "r-good", "status": "Healthy"}])
+    assert reports._unhealthy(store, "r-good") == []

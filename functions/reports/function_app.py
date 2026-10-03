@@ -109,17 +109,26 @@ def _unhealthy(store, run_id):
     """The run's findings, from its immutable snapshot partition.
 
     Runs collected before snapshots existed have no partition; for those, fall back to
-    the latest-state container, which is only accurate for the most recent run.
+    the latest-state container, which is only accurate for the most recent run. A run
+    WITH a partition and zero unhealthy findings returns an empty list, not the fallback.
     """
     params = [{"name": "@run", "value": run_id}]
-    rows = list(store["snapshots"].query_items(UNHEALTHY_IN_RUN, parameters=params, partition_key=run_id))
-    if rows:
+    snaps = store["snapshots"]
+    rows = list(snaps.query_items(UNHEALTHY_IN_RUN, parameters=params, partition_key=run_id))
+    if rows or _has_partition(snaps, run_id):
         return rows
     return list(
         store["assessments"].query_items(
             UNHEALTHY_IN_RUN, parameters=params, enable_cross_partition_query=True
         )
     )
+
+
+def _has_partition(snapshots, run_id) -> bool:
+    return bool(list(snapshots.query_items(
+        "SELECT TOP 1 c.id FROM c WHERE c.runId = @run",
+        parameters=[{"name": "@run", "value": run_id}], partition_key=run_id,
+    )))
 
 
 def _due(finding: dict, severity: str, fallback: datetime.date) -> tuple[str, str]:
