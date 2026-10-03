@@ -15,6 +15,32 @@
 # emails the owner when it returns rows. Changes no resource, blocks nothing.
 # rollback: set tripwire_enabled = false and merge.
 
+# The tripwire's input: the subscription Activity Log, routed to the GRC workspace.
+# This used to be a lab script (labs/02-toolkit/route-activity-log.sh), which put the
+# drift detector's own data feed outside the code and outside drift detection.
+# Existing deployments that ran the script adopt it once:
+#   terraform import azurerm_monitor_diagnostic_setting.activity_log "/subscriptions/<id>|ds-activity-to-law"
+# blast radius: routes four Activity Log categories to the workspace; changes no
+# resource and blocks nothing. rollback: delete this block and merge (logging stops).
+resource "azurerm_monitor_diagnostic_setting" "activity_log" {
+  name                       = "ds-activity-to-law"
+  target_resource_id         = data.azurerm_subscription.current.id
+  log_analytics_workspace_id = azurerm_log_analytics_workspace.grc.id
+
+  enabled_log {
+    category = "Administrative"
+  }
+  enabled_log {
+    category = "Security"
+  }
+  enabled_log {
+    category = "Policy"
+  }
+  enabled_log {
+    category = "Alert"
+  }
+}
+
 locals {
   # Identities whose writes are expected without a human in the loop. AzureActivity
   # records a managed identity's writes under its principal (object) ID.
@@ -53,6 +79,10 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "out_of_band_change" {
   window_duration         = "PT1H"
   auto_mitigation_enabled = true
 
+  # On a brand-new workspace the AzureActivity table appears only after the first rows
+  # land (30 to 60 minutes after routing), and query validation would fail the apply.
+  skip_query_validation = true
+
   criteria {
     query = <<-KQL
       AzureActivity
@@ -77,6 +107,9 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "out_of_band_change" {
   action {
     action_groups = [azurerm_monitor_action_group.grc_owner.id]
   }
+
+  # The query reads AzureActivity, which exists only once routing has delivered rows.
+  depends_on = [azurerm_monitor_diagnostic_setting.activity_log]
 
   tags = {
     env     = var.environment
