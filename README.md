@@ -69,14 +69,17 @@ registrations in the tenant, and a GitHub fork of this repo.
 ### 0. Sign in, register providers, set variables
 
 ```bash
-az account set --subscription <subscription-id>
+SUBSCRIPTION_ID=00000000-0000-0000-0000-000000000000   # your subscription ID
+GITHUB_USER=your-github-user                           # the fork owner
+OWNER_EMAIL=owner@example.com                          # tag value and tripwire alert address; never committed
+az account set --subscription "$SUBSCRIPTION_ID"
 for p in Management Security OperationalInsights DocumentDB Web Storage Insights PolicyInsights; do
   az provider register --namespace Microsoft.$p
 done
-git clone https://github.com/<you>/cgeaz.git && cd cgeaz
+git clone "https://github.com/$GITHUB_USER/cgeaz.git" && cd cgeaz
 
 export ARM_SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-export TF_VAR_owner_email=<owner-email>        # tag value and tripwire alert address; never committed
+export TF_VAR_owner_email="$OWNER_EMAIL"
 export TF_VAR_functions_location=centralus     # a region with Linux Consumption quota (labs/00-setup/probe-quota.sh)
 ```
 
@@ -167,7 +170,7 @@ cd ../..
 ### 7. Arm CI on the fork
 
 ```bash
-cd labs/06-loop && ./arm-your-fork.sh <github-user> && cd ../..
+cd labs/06-loop && ./arm-your-fork.sh "$GITHUB_USER" && cd ../..
 ```
 
 Run it once; each run creates a new app registration. Add the six repository variables
