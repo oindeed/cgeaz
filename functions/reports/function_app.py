@@ -100,9 +100,15 @@ def _unhealthy(cosmos, run_id):
     )
 
 
-def _dated_path(prefix: str, ext: str) -> str:
-    now = datetime.datetime.now(datetime.timezone.utc)
-    return f"{prefix}/{now:%Y/%m}/{prefix}-{now:%Y-%m-%d}.{ext}"
+def _dated_path(prefix: str, ext: str, now: datetime.datetime | None = None) -> str:
+    """One immutable artifact per generation: poam/2026/10/poam-2026-10-03T125501Z.json.
+
+    The UTC timestamp to the second means a same-day regeneration (closing the loop
+    after a remediation, or a manual run beside the daily timer) writes a NEW artifact
+    instead of colliding with the WORM-locked one. Nothing is ever overwritten.
+    """
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    return f"{prefix}/{now:%Y/%m}/{prefix}-{now:%Y-%m-%dT%H%M%SZ}.{ext}"
 
 
 def generate_poam() -> dict:
@@ -139,8 +145,9 @@ def generate_poam() -> dict:
 
     xlsx = io.BytesIO()
     wb.save(xlsx)
-    xlsx_path = _dated_path("poam", "xlsx")
-    json_path = _dated_path("poam", "json")
+    stamp = datetime.datetime.now(datetime.timezone.utc)
+    xlsx_path = _dated_path("poam", "xlsx", stamp)
+    json_path = _dated_path("poam", "json", stamp)
     blobs.upload_blob(xlsx_path, xlsx.getvalue(), overwrite=False)
     blobs.upload_blob(
         json_path,
