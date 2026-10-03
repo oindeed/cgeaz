@@ -95,6 +95,7 @@ resource "azurerm_linux_function_app" "reporting" {
     "COSMOS_DATABASE"                = "grc"
     "REPORTS_ACCOUNT_URL"            = data.azurerm_storage_account.evidence.primary_blob_endpoint
     "REPORTS_CONTAINER"              = "reports"
+    "POAM_OWNER"                     = var.poam_owner
     "SCM_DO_BUILD_DURING_DEPLOYMENT" = "true"
     # ENABLE_ORYX_BUILD is deliberately absent: `az functionapp deployment source config-zip
     # --build-remote true` deletes it on every deploy (SCM_DO_BUILD_DURING_DEPLOYMENT alone
@@ -117,8 +118,10 @@ resource "azurerm_cosmosdb_sql_role_assignment" "reporter_cosmos_read" {
   scope               = local.cosmos_id
 }
 
+# Scoped to the reports container, not the account: the reporter can write reports and
+# nothing else in evidence storage.
 resource "azurerm_role_assignment" "reporter_blob_write" {
-  scope                = data.azurerm_storage_account.evidence.id
+  scope                = "${data.azurerm_storage_account.evidence.id}/blobServices/default/containers/reports"
   role_definition_name = "Storage Blob Data Contributor"
   principal_id         = azurerm_linux_function_app.reporting.identity[0].principal_id
 }

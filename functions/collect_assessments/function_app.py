@@ -10,10 +10,18 @@ Timer fires nightly -> managed identity -> two evidence sources -> Cosmos.
 Both sources share ONE runId per sweep, because the report generators pin to a
 single run: a report is a statement about one known moment, not a blend of two.
 
-One document per finding, upserted on a deterministic ID so re-runs refresh instead
-of duplicate. Each sweep also writes one record to the `runs` ledger (started,
-completed, per-source counts, outcome), because upserts keep only the latest state
-of each finding and the ledger is what proves the collection ran, every night.
+Every finding is written twice, on purpose:
+
+  * `assessments`: the latest state of each finding, upserted on a deterministic ID so
+    re-runs refresh instead of duplicate. It carries `firstSeenAt`, the start of the
+    current unhealthy streak, so POA&M due dates run from detection, not from the day
+    a report happens to be generated.
+  * `snapshots`: an append-only copy per sweep, partitioned by `runId`. Nothing ever
+    updates a past run's partition, so a report generated from run X reproduces from
+    run X forever, and a sweep that fails partway cannot disturb the last good run.
+
+Each sweep also writes one record to the `runs` ledger (started, completed, per-source
+counts, outcome), which is what proves the collection ran, every night.
 
 Deliberately boring: if you can read this file, you can defend this pipeline's
 data lineage.
@@ -28,6 +36,7 @@ import uuid
 import azure.functions as func
 import requests
 from azure.cosmos import CosmosClient
+from azure.cosmos.exceptions import CosmosResourceNotFoundError
 from azure.identity import DefaultAzureCredential
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -203,11 +212,45 @@ def load_policy_mappings(mappings_container) -> dict:
     return {r["controlId"]: r for r in rows}
 
 
+# --- The two writes ----------------------------------------------------------------
+
+
+def _first_seen(assessments, doc: dict) -> str | None:
+    """Start of the current unhealthy streak; None while healthy.
+
+    Carried forward from the stored document while the finding stays Unhealthy, and
+    reset when it clears, so a finding that recurs starts a new remediation clock.
+    """
+    if doc.get("status") != "Unhealthy":
+        return None
+    try:
+        prev = assessments.read_item(item=doc["id"], partition_key=doc["subscriptionId"])
+    except CosmosResourceNotFoundError:
+        return doc["collectedAt"]
+    if prev.get("status") == "Unhealthy" and prev.get("firstSeenAt"):
+        return prev["firstSeenAt"]
+    return doc["collectedAt"]
+
+
+def evidence_writer(assessments, snapshots):
+    """One finding -> latest state (with firstSeenAt) + the run's immutable snapshot."""
+
+    def write(doc: dict) -> None:
+        doc["firstSeenAt"] = _first_seen(assessments, doc)
+        assessments.upsert_item(doc)
+        # Same id, partitioned by runId: unique per (run, finding), and a re-delivered
+        # write inside one sweep is idempotent rather than a duplicate.
+        snapshots.upsert_item(dict(doc))
+
+    return write
+
+
 # --- The sweep ---------------------------------------------------------------------
 
 
 def run_collection(
-    *, session, token, subscription_id, assignments, assessments, mappings_container, runs, trigger
+    *, session, token, subscription_id, assignments, assessments, snapshots,
+    mappings_container, runs, trigger
 ) -> dict:
     run_id = str(uuid.uuid4())
     started_at = _now()
@@ -226,14 +269,15 @@ def run_collection(
     }
     runs.upsert_item(record)
 
+    write = evidence_writer(assessments, snapshots)
     try:
         mappings = load_policy_mappings(mappings_container)
         record["sources"]["defender"] = collect_defender(
-            session, token, subscription_id, assessments.upsert_item, run_id, collected_at
+            session, token, subscription_id, write, run_id, collected_at
         )
         record["sources"]["azurePolicy"] = collect_policy(
             session, token, subscription_id, assignments, mappings,
-            assessments.upsert_item, run_id, collected_at,
+            write, run_id, collected_at,
         )
         record["mappingsLoaded"] = len(mappings)
         record["status"] = "succeeded"
@@ -279,6 +323,7 @@ def _collect(trigger: str) -> dict:
             subscription_id=subscription_id,
             assignments=assignments,
             assessments=db.get_container_client("assessments"),
+            snapshots=db.get_container_client("snapshots"),
             mappings_container=db.get_container_client("mappings"),
             runs=db.get_container_client("runs"),
             trigger=trigger,

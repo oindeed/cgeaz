@@ -39,10 +39,21 @@ class FakeContainer:
         self.writes = []
 
     def upsert_item(self, doc):
-        self.items[doc["id"]] = dict(doc)
+        self.items[self.key(doc)] = dict(doc)
         self.writes.append(dict(doc))
 
-    def query_items(self, query, parameters=None, enable_cross_partition_query=False):
+    def key(self, doc):
+        return doc["id"]
+
+    def read_item(self, item, partition_key):
+        from azure.cosmos.exceptions import CosmosResourceNotFoundError
+        for doc in self.items.values():
+            if doc["id"] == item:
+                return dict(doc)
+        raise CosmosResourceNotFoundError(message="not found")
+
+    def query_items(self, query, parameters=None, enable_cross_partition_query=False,
+                    partition_key=None):
         params = {p["name"]: p["value"] for p in (parameters or [])}
         rows = list(self.items.values())
         if "c.type = 'control-mapping'" in query:
@@ -95,6 +106,21 @@ class FakeSession:
         return FakeResponse(self.post_pages.pop(0))
 
 
+class FakeSnapshots(FakeContainer):
+    """Partitioned by runId: the same finding id in two runs is two documents."""
+
+    def key(self, doc):
+        return (doc["runId"], doc["id"])
+
+    def partition(self, run_id):
+        return {k[1]: v for k, v in self.items.items() if k[0] == run_id}
+
+
 @pytest.fixture
 def fakes():
     return FakeContainer, FakeSession
+
+
+@pytest.fixture
+def snapshots_cls():
+    return FakeSnapshots

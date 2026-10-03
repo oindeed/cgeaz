@@ -53,13 +53,14 @@ MAPPING = {
 
 
 def _run(collector, fakes, post_status=200, mappings=(MAPPING,)):
+    from conftest import FakeSnapshots
     Container, Session = fakes
     session = Session([DEFENDER_PAGE], [POLICY_PAGE_1, POLICY_PAGE_2], post_status)
     assessments, mapping_c, runs = Container(), Container(list(mappings)), Container()
     kwargs = dict(session=session, token="t", subscription_id=SUB,
                   assignments=["cge-grc-baseline", "cge-fix-public-blob"],
-                  assessments=assessments, mappings_container=mapping_c,
-                  runs=runs, trigger="http")
+                  assessments=assessments, snapshots=FakeSnapshots(),
+                  mappings_container=mapping_c, runs=runs, trigger="http")
     return session, assessments, runs, kwargs
 
 
@@ -193,3 +194,50 @@ def test_arm_session_recovers_from_one_500(collector):
         assert resp.status_code == 200 and len(hits) == 2
     finally:
         server.shutdown()
+
+
+def test_each_sweep_writes_an_immutable_snapshot_partition(collector, fakes):
+    Container, Session = fakes
+    _, _, _, kw = _run(collector, fakes)
+    snaps = kw["snapshots"]
+    first = collector.run_collection(**kw)
+    before = {k: dict(v) for k, v in snaps.partition(first["runId"]).items()}
+    kw["session"] = Session([DEFENDER_PAGE], [POLICY_PAGE_1, POLICY_PAGE_2])
+    second = collector.run_collection(**kw)
+
+    assert len(before) == 3 and len(snaps.partition(second["runId"])) == 3
+    # The second sweep never touched the first sweep's partition.
+    assert snaps.partition(first["runId"]) == before
+    assert {d["runId"] for d in before.values()} == {first["runId"]}
+
+
+def test_failed_sweep_leaves_the_last_good_partition_whole(collector, fakes):
+    Container, Session = fakes
+    _, _, runs, kw = _run(collector, fakes)
+    good = collector.run_collection(**kw)
+    kw["session"] = Session([DEFENDER_PAGE], [], post_status=500)
+    with pytest.raises(RuntimeError):
+        collector.run_collection(**kw)
+
+    assert len(kw["snapshots"].partition(good["runId"])) == 3
+    assert runs.items[good["runId"]]["status"] == "succeeded"
+
+
+def test_first_seen_carries_forward_while_unhealthy_and_resets_when_cleared(collector, fakes):
+    Container, Session = fakes
+    _, assessments, _, kw = _run(collector, fakes)
+    first = collector.run_collection(**kw)
+    seed_id = next(d["id"] for d in assessments.items.values()
+                   if d["source"] == "azure-policy" and d["status"] == "Unhealthy")
+    kw["session"] = Session([DEFENDER_PAGE], [POLICY_PAGE_1, POLICY_PAGE_2])
+    collector.run_collection(**kw)
+    assert assessments.items[seed_id]["firstSeenAt"] == first["collectedAt"]
+
+    healthy = {"value": [dict(POLICY_PAGE_1["value"][0], complianceState="Compliant")]}
+    kw["session"] = Session([DEFENDER_PAGE], [healthy])
+    collector.run_collection(**kw)
+    assert assessments.items[seed_id]["firstSeenAt"] is None
+
+    kw["session"] = Session([DEFENDER_PAGE], [POLICY_PAGE_1, POLICY_PAGE_2])
+    recur = collector.run_collection(**kw)
+    assert assessments.items[seed_id]["firstSeenAt"] == recur["collectedAt"]
