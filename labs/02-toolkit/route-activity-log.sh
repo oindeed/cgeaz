@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Superseded by azurerm_monitor_diagnostic_setting.activity_log in stages/01-foundation/tripwire.tf.
+# Kept for Lab 2, which routes the log by hand before Terraform exists.
 # Route the subscription Activity Log to the GRC workspace.
 # az monitor diagnostic-settings create throws KeyError: 'resource_group' at
 # subscription scope (validated on CLI 2.90), so this uses the API directly.

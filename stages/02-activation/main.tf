@@ -81,9 +81,22 @@ resource "azurerm_security_center_subscription_pricing" "baseline" {
 # Lab 2 — ADOPT it here with `terraform import` (Lab 4 guide, step 1); don't
 # delete and recreate a live assignment. Codified, a whole assessment posture
 # stands up from an empty subscription with one apply.
+#
+# The identity block satisfies the repo gate's policy_identity rule: a regulatory
+# initiative can carry deployIfNotExists members, and an assignment without an identity
+# applies cleanly and then silently never remediates. The system-assigned identity holds
+# no role until a remediation is deliberately granted one.
+# blast radius: assessment only (the initiative's members audit by default). Adding the
+# identity sets a location, which replaces the assignment once; compliance data for the
+# standard re-evaluates within about 30 minutes. rollback: revert the PR.
 resource "azurerm_subscription_policy_assignment" "nist_csf_20" {
   name                 = "nist-csf-20"
   display_name         = "NIST CSF v2.0"
   policy_definition_id = "/providers/Microsoft.Authorization/policySetDefinitions/184a0e05-7b06-4a68-bbbe-13b8353bc613"
   subscription_id      = data.azurerm_subscription.current.id
+  location             = var.location
+
+  identity {
+    type = "SystemAssigned"
+  }
 }

@@ -6,3 +6,9 @@ variable "baseline_plans" {
     KeyVaults       = "PerKeyVault"
   }
 }
+
+variable "location" {
+  description = "Region for the NIST CSF assignment's managed identity."
+  type        = string
+  default     = "eastus"
+}

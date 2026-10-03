@@ -43,9 +43,15 @@ locals {
   enforcement_mode = var.remediation_mode == "enforce" ? "Default" : "DoNotEnforce"
 }
 
-# blast radius: flips allowBlobPublicAccess to false on existing storage accounts
-# under mg-grc-sandbox. Cannot delete anything, cannot read data, cannot touch
-# any other property. rollback: set remediation_mode back to "audit" and merge.
+# blast radius: the policy flips allowBlobPublicAccess to false on storage accounts under
+# mg-grc-sandbox and touches no other property. The identity it runs as holds Storage
+# Account Contributor (the narrowest built-in role that can write the property), which
+# could in principle change other account settings or list keys. That residual risk is
+# bounded by: the identity is used only by the policy engine, in dry-run every run needs
+# a human-created remediation task, every write it makes is attributed to it in the
+# Activity Log, and the role exists only when remediation_mode != audit. Production step:
+# a custom role limited to storageAccounts/read and /write.
+# rollback: set remediation_mode back to "audit" and merge (removes the role as well).
 resource "azurerm_policy_definition" "fix_public_blob" {
   name                = "cge-fix-public-blob"
   display_name        = "Remediate: disable public blob access on storage accounts"

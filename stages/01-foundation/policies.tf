@@ -3,6 +3,8 @@
 
 # --- 1. Require the `env` tag on resource groups (inventory hygiene; POA&M owner resolution) ---
 
+# blast radius: Audit only. Writes compliance state, changes no resource, blocks nothing.
+# rollback: set tag_policy_effect = "Disabled" and merge.
 resource "azurerm_policy_definition" "require_env_tag" {
   name                = "cge-require-env-tag-rg"
   display_name        = "Resource groups must carry an env tag"
@@ -31,6 +33,10 @@ resource "azurerm_policy_definition" "require_env_tag" {
 
 # --- 2. Deny public blob access on storage accounts (clear-cut, framework-mandated: earned Deny) ---
 
+# blast radius: blocks create or update of any storage account under mg-grc-sandbox with
+# allowBlobPublicAccess = true, for every identity including Owner. Existing accounts are
+# not modified; they surface as non-compliant. Deletes nothing, reads no data.
+# rollback: set public_blob_policy_effect = "Audit" and merge (Lab 6 exercises this).
 resource "azurerm_policy_definition" "deny_public_blob" {
   name                = "cge-deny-public-blob"
   display_name        = "Storage accounts must not allow public blob access"
@@ -60,6 +66,13 @@ resource "azurerm_policy_definition" "deny_public_blob" {
 # --- 3. deployIfNotExists: storage accounts missing diagnostic settings get them, routed to the GRC workspace ---
 # Logging that enforces its own coverage. Remediation runs AS the identity in identity.tf.
 
+# blast radius: deploys a diagnostic setting (Transaction metrics to the GRC workspace) on
+# storage accounts missing one, automatically after create or update, and on existing
+# accounts through a remediation task. Runs as the remediation identity, which holds only
+# Monitoring Contributor here. Adds a child resource; changes no account property and
+# deletes nothing. Cost: workspace ingestion for the metrics.
+# rollback: remove the initiative reference and merge; settings already deployed stay
+# until removed by hand.
 resource "azurerm_policy_definition" "storage_diagnostics" {
   name                = "cge-dine-storage-diagnostics"
   display_name        = "Storage accounts must route diagnostics to the GRC workspace"
