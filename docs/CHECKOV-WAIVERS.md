@@ -6,7 +6,7 @@ the reason sits in the same diff as the code it excuses. This file is the regist
 same waivers grouped by root cause, each with its compensating control and the
 production path that would retire it.
 
-**Current state: 57 passed, 0 failed, 27 waived across all six stages.**
+**Measured at PR #9: 57 passed, 0 failed, 27 waived across all five stage directories (01, 02, 03, 04, 06).** Later PRs add resources; the gate is the same either way: 0 failed, or the build is red.
 
 ## How the starter's 36 findings were resolved
 
