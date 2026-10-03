@@ -17,3 +17,9 @@ variable "state_resource_group" {
 variable "state_storage_account" {
   type = string
 }
+
+variable "poam_owner" {
+  description = "Owner written on every POA&M item: a role, never a person's name in code."
+  type        = string
+  default     = "GRC Program Owner"
+}

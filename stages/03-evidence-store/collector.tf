@@ -97,14 +97,61 @@ resource "azurerm_role_assignment" "collector_security_reader" {
   principal_id         = azurerm_linux_function_app.collectors.identity[0].principal_id
 }
 
-# Cosmos data-plane write. "Cosmos DB Built-in Data Contributor" (00000000-0000-0000-0000-000000000002)
-# is a Cosmos-native data-plane role, not an ARM role — control plane vs data plane, again.
-resource "azurerm_cosmosdb_sql_role_assignment" "collector_cosmos_write" {
+# Cosmos data plane, scoped per container. Cosmos-native data-plane roles, not ARM roles:
+# control plane vs data plane, again. The collector gets exactly what each container's job
+# needs, and nothing account-wide:
+#   assessments, runs   Built-in Data Contributor (upsert latest state; write the ledger)
+#   mappings            Built-in Data Reader (the crosswalk is input, never output)
+#   snapshots           custom: create + read only. Without replace or upsert, a past
+#                       run's partition cannot be rewritten even by the collector's code.
+locals {
+  cosmos_scope = "${azurerm_cosmosdb_account.evidence.id}/dbs/${azurerm_cosmosdb_sql_database.grc.name}/colls"
+  cosmos_role  = "${azurerm_cosmosdb_account.evidence.id}/sqlRoleDefinitions"
+}
+
+resource "azurerm_cosmosdb_sql_role_definition" "snapshot_writer" {
+  name                = "GRC Snapshot Writer (${var.environment})"
   resource_group_name = local.evidence_rg
   account_name        = azurerm_cosmosdb_account.evidence.name
-  role_definition_id  = "${azurerm_cosmosdb_account.evidence.id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
+  type                = "CustomRole"
+  assignable_scopes   = [azurerm_cosmosdb_account.evidence.id]
+
+  permissions {
+    data_actions = [
+      "Microsoft.DocumentDB/databaseAccounts/readMetadata",
+      "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers/items/create",
+      "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers/items/read",
+    ]
+  }
+}
+
+resource "azurerm_cosmosdb_sql_role_assignment" "collector_latest_state" {
+  for_each = toset([
+    azurerm_cosmosdb_sql_container.assessments.name,
+    azurerm_cosmosdb_sql_container.runs.name,
+  ])
+
+  resource_group_name = local.evidence_rg
+  account_name        = azurerm_cosmosdb_account.evidence.name
+  role_definition_id  = "${local.cosmos_role}/00000000-0000-0000-0000-000000000002"
   principal_id        = azurerm_linux_function_app.collectors.identity[0].principal_id
-  scope               = azurerm_cosmosdb_account.evidence.id
+  scope               = "${local.cosmos_scope}/${each.value}"
+}
+
+resource "azurerm_cosmosdb_sql_role_assignment" "collector_mappings_read" {
+  resource_group_name = local.evidence_rg
+  account_name        = azurerm_cosmosdb_account.evidence.name
+  role_definition_id  = "${local.cosmos_role}/00000000-0000-0000-0000-000000000001"
+  principal_id        = azurerm_linux_function_app.collectors.identity[0].principal_id
+  scope               = "${local.cosmos_scope}/${azurerm_cosmosdb_sql_container.mappings.name}"
+}
+
+resource "azurerm_cosmosdb_sql_role_assignment" "collector_snapshots_create" {
+  resource_group_name = local.evidence_rg
+  account_name        = azurerm_cosmosdb_account.evidence.name
+  role_definition_id  = azurerm_cosmosdb_sql_role_definition.snapshot_writer.id
+  principal_id        = azurerm_linux_function_app.collectors.identity[0].principal_id
+  scope               = "${local.cosmos_scope}/${azurerm_cosmosdb_sql_container.snapshots.name}"
 }
 
 # --- Policy compliance: read-only, policy states only. ---

@@ -67,7 +67,8 @@ resource "azurerm_cosmosdb_sql_database" "grc" {
   account_name        = azurerm_cosmosdb_account.evidence.name
 }
 
-# assessments: one document per finding per run. Partitioned by subscription+date query pattern.
+# assessments: the LATEST state of each finding, upserted in place on a deterministic ID,
+# with firstSeenAt (start of the current unhealthy streak). Not history: see snapshots.
 resource "azurerm_cosmosdb_sql_container" "assessments" {
   name                = "assessments"
   resource_group_name = local.evidence_rg
@@ -94,15 +95,26 @@ resource "azurerm_cosmosdb_sql_container" "mappings" {
   partition_key_paths = ["/frameworkId"]
 }
 
-# runs: one record per collection sweep (started, completed, per-source counts, outcome).
-# Findings are upserted, so `assessments` holds the latest state of each; the ledger is
-# the history that proves collection ran every night, and the reports pin to it.
+# runs: one record per collection sweep (started, completed, per-source counts, outcome,
+# error). The history that proves collection ran every night; the reports pin to it.
 resource "azurerm_cosmosdb_sql_container" "runs" {
   name                = "runs"
   resource_group_name = local.evidence_rg
   account_name        = azurerm_cosmosdb_account.evidence.name
   database_name       = azurerm_cosmosdb_sql_database.grc.name
   partition_key_paths = ["/subscriptionId"]
+}
+
+# snapshots: an append-only copy of every finding, per sweep, partitioned by runId. The
+# collector only ever writes the current run's partition, so a report generated from run X
+# reproduces from run X indefinitely, and a sweep that fails partway cannot disturb the
+# last good run. The reports read from here.
+resource "azurerm_cosmosdb_sql_container" "snapshots" {
+  name                = "snapshots"
+  resource_group_name = local.evidence_rg
+  account_name        = azurerm_cosmosdb_account.evidence.name
+  database_name       = azurerm_cosmosdb_sql_database.grc.name
+  partition_key_paths = ["/runId"]
 }
 
 # --- Evidence artifact storage: WORM reports container, zero shared keys. ---

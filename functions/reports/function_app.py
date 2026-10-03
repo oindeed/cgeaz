@@ -9,7 +9,9 @@ Generators here: POA&M (xlsx + json, daily) and SAR (markdown, weekly), both wit
 HTTP triggers for labs and demos.
 
 Both pin to the latest SUCCEEDED run in the collector's `runs` ledger, so a report
-never reads a sweep that is still writing or one that failed partway. Findings come
+never reads a sweep that is still writing or one that failed partway, and both read
+that run's partition of the append-only `snapshots` container. The collector never
+touches a past run's partition, so any report reproduces from its runId indefinitely. Findings come
 from every source the collector records (Defender assessments and Azure Policy
 compliance), and each finding names its source.
 """
@@ -29,8 +31,13 @@ from openpyxl import Workbook
 
 app = func.FunctionApp()
 
-# Severity-based SLAs: a POA&M is a plan, not a list.
+# Severity-based SLAs: a POA&M is a plan, not a list. The clock starts when the finding
+# was first seen unhealthy (collector's firstSeenAt), not when the report runs.
 SLA_DAYS = {"High": 30, "Medium": 90, "Low": 180}
+
+# The POA&M owner is a role, set per deployment (stage 04 app setting), never a person's
+# name in code.
+DEFAULT_OWNER = "GRC Program Owner"
 
 
 def _clients():
@@ -41,10 +48,15 @@ def _clients():
     blobs = BlobServiceClient(
         account_url=os.environ["REPORTS_ACCOUNT_URL"], credential=credential
     ).get_container_client(os.environ["REPORTS_CONTAINER"])
-    return db.get_container_client("assessments"), db.get_container_client("runs"), blobs
+    return (
+        {"assessments": db.get_container_client("assessments"),
+         "snapshots": db.get_container_client("snapshots")},
+        db.get_container_client("runs"),
+        blobs,
+    )
 
 
-def _latest_run(cosmos, runs):
+def _latest_run(store, runs):
     """Pin the report to a specific collection sweep — a statement about a known moment.
 
     The ledger's latest succeeded run wins. If the ledger is empty (a store written
@@ -59,7 +71,7 @@ def _latest_run(cosmos, runs):
     )
     if not rows:
         rows = list(
-            cosmos.query_items(
+            store["assessments"].query_items(
                 "SELECT TOP 1 c.runId, c.collectedAt FROM c ORDER BY c.collectedAt DESC",
                 enable_cross_partition_query=True,
             )
@@ -90,14 +102,40 @@ def _run_history(runs, days: int = 7) -> dict:
     }
 
 
-def _unhealthy(cosmos, run_id):
+UNHEALTHY_IN_RUN = "SELECT * FROM c WHERE c.runId = @run AND c.status = 'Unhealthy'"
+
+
+def _unhealthy(store, run_id):
+    """The run's findings, from its immutable snapshot partition.
+
+    Runs collected before snapshots existed have no partition; for those, fall back to
+    the latest-state container, which is only accurate for the most recent run. A run
+    WITH a partition and zero unhealthy findings returns an empty list, not the fallback.
+    """
+    params = [{"name": "@run", "value": run_id}]
+    snaps = store["snapshots"]
+    rows = list(snaps.query_items(UNHEALTHY_IN_RUN, parameters=params, partition_key=run_id))
+    if rows or _has_partition(snaps, run_id):
+        return rows
     return list(
-        cosmos.query_items(
-            "SELECT * FROM c WHERE c.runId = @run AND c.status = 'Unhealthy'",
-            parameters=[{"name": "@run", "value": run_id}],
-            enable_cross_partition_query=True,
+        store["assessments"].query_items(
+            UNHEALTHY_IN_RUN, parameters=params, enable_cross_partition_query=True
         )
     )
+
+
+def _has_partition(snapshots, run_id) -> bool:
+    return bool(list(snapshots.query_items(
+        "SELECT TOP 1 c.id FROM c WHERE c.runId = @run",
+        parameters=[{"name": "@run", "value": run_id}], partition_key=run_id,
+    )))
+
+
+def _due(finding: dict, severity: str, fallback: datetime.date) -> tuple[str, str]:
+    """(firstSeen date, scheduled completion) from the finding's own detection time."""
+    first = finding.get("firstSeenAt") or finding.get("collectedAt")
+    start = datetime.date.fromisoformat(first[:10]) if first else fallback
+    return start.isoformat(), (start + datetime.timedelta(days=SLA_DAYS.get(severity, 90))).isoformat()
 
 
 def _dated_path(prefix: str, ext: str, now: datetime.datetime | None = None) -> str:
@@ -112,30 +150,33 @@ def _dated_path(prefix: str, ext: str, now: datetime.datetime | None = None) -> 
 
 
 def generate_poam() -> dict:
-    cosmos, runs, blobs = _clients()
-    run_id, collected_at = _latest_run(cosmos, runs)
-    findings = _unhealthy(cosmos, run_id) if run_id else []
+    store, runs, blobs = _clients()
+    run_id, collected_at = _latest_run(store, runs)
+    findings = _unhealthy(store, run_id) if run_id else []
     today = datetime.date.today()
+    owner = os.environ.get("POAM_OWNER", DEFAULT_OWNER)
 
     wb = Workbook()
     ws = wb.active
     ws.title = "POA&M"
     ws.append(
         ["POA&M ID", "Weakness", "Affected Resource", "Severity",
-         "Detected (run)", "Scheduled Completion", "Owner", "Status", "Source", "Control ID"]
+         "First Seen", "Detected (run)", "Scheduled Completion", "Owner", "Status", "Source",
+         "Control ID"]
     )
     rows = []
     for i, f in enumerate(sorted(findings, key=lambda x: x.get("severity") or ""), 1):
         severity = f.get("severity") or "Medium"
-        due = today + datetime.timedelta(days=SLA_DAYS.get(severity, 90))
+        first_seen, due = _due(f, severity, today)
         row = {
             "poamId": f"POAM-{today:%Y%m%d}-{i:03d}",
             "weakness": f.get("displayName"),
             "resourceId": f.get("resourceId"),
             "severity": severity,
+            "firstSeen": first_seen,
             "detectedRun": run_id,
-            "scheduledCompletion": due.isoformat(),
-            "owner": "resource-group owner tag",  # resolved during Domain 5's lab extension
+            "scheduledCompletion": due,
+            "owner": owner,
             "status": "Open",
             "source": f.get("source") or "defender",
             "controlId": f.get("assessmentId"),
@@ -159,9 +200,9 @@ def generate_poam() -> dict:
 
 
 def generate_sar() -> dict:
-    cosmos, runs, blobs = _clients()
-    run_id, collected_at = _latest_run(cosmos, runs)
-    findings = _unhealthy(cosmos, run_id) if run_id else []
+    store, runs, blobs = _clients()
+    run_id, collected_at = _latest_run(store, runs)
+    findings = _unhealthy(store, run_id) if run_id else []
     by_severity = Counter(f.get("severity") or "Unknown" for f in findings)
     by_source = Counter(f.get("source") or "defender" for f in findings)
     history = _run_history(runs)
@@ -192,7 +233,8 @@ def generate_sar() -> dict:
             f"- Severity: {f.get('severity')}",
             f"- Source: {f.get('source') or 'defender'}",
             f"- Resource: `{f.get('resourceId')}`",
-            f"- Assessment ID: `{f.get('assessmentId')}` (trace: query the assessments container)",
+            f"- First seen: {f.get('firstSeenAt') or 'n/a'}",
+            f"- Assessment ID: `{f.get('assessmentId')}` (trace: `snapshots`, partition `{run_id}`)",
             "",
         ]
 

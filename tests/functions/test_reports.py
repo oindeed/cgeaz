@@ -10,6 +10,7 @@ def _iso(delta_hours):
 
 
 def _store(fakes):
+    from conftest import FakeSnapshots
     Container, _ = fakes
     runs = Container([
         {"id": "r-old", "runId": "r-old", "status": "succeeded", "trigger": "timer",
@@ -33,7 +34,8 @@ def _store(fakes):
          "source": "defender", "severity": "Low", "displayName": "partial",
          "resourceId": "/y", "assessmentId": "assess-2"},
     ])
-    return assessments, runs
+    snapshots = FakeSnapshots(list(assessments.items.values()))
+    return {"assessments": assessments, "snapshots": snapshots}, runs
 
 
 class FakeBlobs:
@@ -117,3 +119,42 @@ def test_poam_same_day_regeneration_does_not_collide(reports, fakes, monkeypatch
     monkeypatch.setattr(reports.datetime, "datetime", Clock)
     first, second = reports.generate_poam(), reports.generate_poam()
     assert first["json"] != second["json"] and len(blobs.uploaded) == 4
+
+
+def test_report_reproduces_from_its_snapshot_after_latest_state_moves_on(reports, fakes, monkeypatch):
+    store, runs = _store(fakes)
+    # A later sweep refreshed the latest-state container in place: finding "a" is now
+    # healthy and stamped with a newer runId. The r-good partition is untouched.
+    store["assessments"].items["a"].update(runId="r-newer", status="Healthy")
+    store["assessments"].items["b"].update(runId="r-newer")
+    findings = reports._unhealthy(store, "r-good")
+    assert {f["assessmentId"] for f in findings} == {"assess-1", "cge-require-data-classification"}
+
+
+def test_unhealthy_falls_back_for_runs_older_than_snapshots(reports, fakes):
+    from conftest import FakeSnapshots
+    store, _ = _store(fakes)
+    store["snapshots"] = FakeSnapshots()
+    assert len(reports._unhealthy(store, "r-good")) == 2
+
+
+def test_poam_due_date_runs_from_first_seen(reports, fakes, monkeypatch):
+    import json
+    store, runs = _store(fakes)
+    for snap in store["snapshots"].items.values():
+        if snap["id"] == "b":
+            snap["firstSeenAt"] = "2026-09-01T05:00:00+00:00"
+    blobs = FakeBlobs()
+    monkeypatch.setattr(reports, "_clients", lambda: (store, runs, blobs))
+    monkeypatch.setenv("POAM_OWNER", "GRC Program Owner")
+    items = json.loads(blobs.uploaded[reports.generate_poam()["json"]])["items"]
+    b = next(i for i in items if i["controlId"] == "cge-require-data-classification")
+    assert b["firstSeen"] == "2026-09-01" and b["scheduledCompletion"] == "2026-11-30"  # Medium: 90 days
+    assert {i["owner"] for i in items} == {"GRC Program Owner"}
+
+
+def test_clean_run_with_snapshot_reports_zero_not_fallback(reports, fakes):
+    from conftest import FakeSnapshots
+    store, _ = _store(fakes)
+    store["snapshots"] = FakeSnapshots([{"id": "a", "runId": "r-good", "status": "Healthy"}])
+    assert reports._unhealthy(store, "r-good") == []

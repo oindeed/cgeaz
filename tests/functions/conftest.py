@@ -35,14 +35,25 @@ class FakeContainer:
     """Upserts by id, and answers the handful of query shapes the functions use."""
 
     def __init__(self, items=None):
-        self.items = {i["id"]: dict(i) for i in (items or [])}
+        self.items = {self.key(i): dict(i) for i in (items or [])}
         self.writes = []
 
     def upsert_item(self, doc):
-        self.items[doc["id"]] = dict(doc)
+        self.items[self.key(doc)] = dict(doc)
         self.writes.append(dict(doc))
 
-    def query_items(self, query, parameters=None, enable_cross_partition_query=False):
+    def key(self, doc):
+        return doc["id"]
+
+    def read_item(self, item, partition_key):
+        from azure.cosmos.exceptions import CosmosResourceNotFoundError
+        for doc in self.items.values():
+            if doc["id"] == item:
+                return dict(doc)
+        raise CosmosResourceNotFoundError(message="not found")
+
+    def query_items(self, query, parameters=None, enable_cross_partition_query=False,
+                    partition_key=None):
         params = {p["name"]: p["value"] for p in (parameters or [])}
         rows = list(self.items.values())
         if "c.type = 'control-mapping'" in query:
@@ -58,6 +69,8 @@ class FakeContainer:
         if "c.status = 'Unhealthy'" in query:
             return [r for r in rows if r.get("runId") == params["@run"]
                     and r.get("status") == "Unhealthy"]
+        if query.startswith("SELECT TOP 1 c.id FROM c WHERE c.runId = @run"):
+            return [r for r in rows if r.get("runId") == params["@run"]][:1]
         if "ORDER BY c.collectedAt DESC" in query:
             return sorted(rows, key=lambda r: r["collectedAt"], reverse=True)[:1]
         raise AssertionError(f"unexpected query: {query}")
@@ -95,6 +108,34 @@ class FakeSession:
         return FakeResponse(self.post_pages.pop(0))
 
 
+class FakeSnapshots(FakeContainer):
+    """Partitioned by runId: the same finding id in two runs is two documents.
+
+    Mirrors the collector's RBAC on this container: create and read, never replace.
+    """
+
+    def key(self, doc):
+        return (doc["runId"], doc["id"])
+
+    def upsert_item(self, doc):
+        raise AssertionError("snapshots are create-only; upsert is not granted")
+
+    def create_item(self, doc):
+        from azure.cosmos.exceptions import CosmosResourceExistsError
+        if self.key(doc) in self.items:
+            raise CosmosResourceExistsError(message="conflict")
+        self.items[self.key(doc)] = dict(doc)
+        self.writes.append(dict(doc))
+
+    def partition(self, run_id):
+        return {k[1]: v for k, v in self.items.items() if k[0] == run_id}
+
+
 @pytest.fixture
 def fakes():
     return FakeContainer, FakeSession
+
+
+@pytest.fixture
+def snapshots_cls():
+    return FakeSnapshots
