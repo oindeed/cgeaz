@@ -92,3 +92,28 @@ def test_poam_rows_carry_source_and_control(reports, fakes, monkeypatch):
     assert policy["controlId"] == "cge-require-data-classification"
     assert policy["severity"] == "Medium"
     assert set(blobs.uploaded) == {result["xlsx"], result["json"]}
+
+
+def test_report_paths_are_unique_per_generation(reports):
+    import datetime as dt
+    a = reports._dated_path("poam", "json", dt.datetime(2026, 10, 3, 12, 55, 1, tzinfo=dt.timezone.utc))
+    b = reports._dated_path("poam", "json", dt.datetime(2026, 10, 3, 18, 2, 9, tzinfo=dt.timezone.utc))
+    assert a == "poam/2026/10/poam-2026-10-03T125501Z.json"
+    assert a != b  # same day, two generations, two immutable artifacts
+
+
+def test_poam_same_day_regeneration_does_not_collide(reports, fakes, monkeypatch):
+    import itertools, datetime as dt
+    assessments, runs = _store(fakes)
+    blobs = FakeBlobs()
+    monkeypatch.setattr(reports, "_clients", lambda: (assessments, runs, blobs))
+    ticks = itertools.count()
+
+    class Clock(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return dt.datetime(2026, 10, 3, 12, 0, next(ticks), tzinfo=dt.timezone.utc)
+
+    monkeypatch.setattr(reports.datetime, "datetime", Clock)
+    first, second = reports.generate_poam(), reports.generate_poam()
+    assert first["json"] != second["json"] and len(blobs.uploaded) == 4

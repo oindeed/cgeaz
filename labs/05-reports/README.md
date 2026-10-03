@@ -65,8 +65,8 @@ curl "https://$APP.azurewebsites.net/api/sar?code=$K2"
 **Expected output:** one JSON line each, shaped like (your counts, run ID, and dates differ):
 
 ```
-{"items": <N>, "runId": "<uuid>", "xlsx": "poam/<YYYY>/<MM>/poam-<YYYY-MM-DD>.xlsx", "json": "poam/<YYYY>/<MM>/poam-<YYYY-MM-DD>.json"}
-{"findings": <N>, "runId": "<uuid>", "path": "sar/<YYYY>/<MM>/sar-<YYYY-MM-DD>.md"}
+{"items": <N>, "runId": "<uuid>", "xlsx": "poam/<YYYY>/<MM>/poam-<YYYY-MM-DD>T<HHMMSS>Z.xlsx", "json": "poam/<YYYY>/<MM>/poam-<YYYY-MM-DD>T<HHMMSS>Z.json"}
+{"findings": <N>, "runId": "<uuid>", "path": "sar/<YYYY>/<MM>/sar-<YYYY-MM-DD>T<HHMMSS>Z.md", "sweeps7d": <N>}
 ```
 
 Both land in the WORM `reports` container on dated paths — xlsx + json for the POA&M
@@ -76,10 +76,11 @@ Both land in the WORM `reports` container on dated paths — xlsx + json for the
 > hasn't cycled or the collector hasn't run. Validated: empty-store runs are clean,
 > not errors. Generate real reports after Lab 4 step 4 produces a non-zero run.
 
-> **If a second run the same day errors on upload:** the generators write with
-> `overwrite=False` and the blob path is dated per day, so a same-day re-run finds
-> the first artifact already there (and WORM would forbid replacing it anyway).
-> That's the store doing its job; tomorrow's path is new.
+> **Every generation is its own immutable artifact.** Paths carry a UTC timestamp to
+> the second, and the generators write with `overwrite=False` into the WORM container,
+> so a same-day re-run (Lab 6 regenerates the POA&M after remediation) creates a new
+> artifact beside the first. Nothing is ever replaced; the earlier report stays as the
+> record of what was true at the time.
 
 ### 4. The trace — the test an assessor would run
 
