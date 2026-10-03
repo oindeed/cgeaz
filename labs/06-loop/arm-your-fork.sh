@@ -28,8 +28,25 @@ APP_OBJ=$(az ad app show --id "$APP_ID" --query id -o tsv)
 az ad sp create --id "$APP_ID" --output none 2>/dev/null || true
 SP_ID=$(az ad sp show --id "$APP_ID" --query id -o tsv)
 
-echo ">> Federated credentials for repo:${GH_USER}/${REPO} (pull_request + main)"
-for sub in "repo:${GH_USER}/${REPO}:pull_request|pr" "repo:${GH_USER}/${REPO}:ref:refs/heads/main|main"; do
+# GitHub's OIDC subject comes in two shapes. The legacy one names the repo
+# (repo:OWNER/REPO:...). The current one also pins the immutable owner and repo IDs
+# (repo:OWNER@OWNER_ID/REPO@REPO_ID:...), so a renamed or deleted-and-recreated repo
+# with the same name can never satisfy the federation. Validated 2026-10-03: this fork's
+# tokens arrived in the ID-pinned shape and the name-only credential was rejected
+# (AADSTS700213). Register both; Entra matches whichever GitHub presents.
+IDS=$(curl -fsS "https://api.github.com/repos/${GH_USER}/${REPO}" 2>/dev/null \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print(d['owner']['id'], d['id'])" 2>/dev/null || true)
+OWNER_ID=${IDS% *}; REPO_ID=${IDS#* }
+SUBJECTS=("repo:${GH_USER}/${REPO}:pull_request|pr" "repo:${GH_USER}/${REPO}:ref:refs/heads/main|main")
+if [ -n "$IDS" ]; then
+  SUBJECTS+=("repo:${GH_USER}@${OWNER_ID}/${REPO}@${REPO_ID}:pull_request|pr-ids"
+             "repo:${GH_USER}@${OWNER_ID}/${REPO}@${REPO_ID}:ref:refs/heads/main|main-ids")
+else
+  echo "   !! could not read repo IDs from the GitHub API; only name-based subjects registered"
+fi
+
+echo ">> Federated credentials for ${GH_USER}/${REPO} (pull_request + main, name and ID forms)"
+for sub in "${SUBJECTS[@]}"; do
   SUBJECT="${sub%|*}"; NAME="${sub#*|}"
   az ad app federated-credential create --id "$APP_OBJ" --parameters "{
     \"name\": \"${REPO}-${NAME}\",

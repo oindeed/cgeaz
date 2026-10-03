@@ -77,6 +77,12 @@ an armed plan returns 403, the error names the missing action: add that one acti
 the role file by PR. `CI_ROLE=contributor ./arm-your-fork.sh <user>` restores the
 starter's broader grant if you need to unblock while you diagnose.
 
+The script registers the federation in both of GitHub's OIDC subject forms: the
+name-only `repo:OWNER/REPO:...` and the ID-pinned `repo:OWNER@OWNER_ID/REPO@REPO_ID:...`.
+If CI fails at `azure/login` with `AADSTS700213: No matching federated identity record`,
+the error prints the exact subject GitHub presented; add a federated credential with
+that subject rather than re-running the script (each run creates a new app registration).
+
 They're variables, not secrets, because OIDC stores no credential — the IDs grant
 nothing without the federation match, and the federation names your fork alone.
 
