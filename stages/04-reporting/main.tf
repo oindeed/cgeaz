@@ -96,7 +96,10 @@ resource "azurerm_linux_function_app" "reporting" {
     "REPORTS_ACCOUNT_URL"            = data.azurerm_storage_account.evidence.primary_blob_endpoint
     "REPORTS_CONTAINER"              = "reports"
     "SCM_DO_BUILD_DURING_DEPLOYMENT" = "true"
-    "ENABLE_ORYX_BUILD"              = "true"
+    # ENABLE_ORYX_BUILD is deliberately absent: `az functionapp deployment source config-zip
+    # --build-remote true` deletes it on every deploy (SCM_DO_BUILD_DURING_DEPLOYMENT alone
+    # triggers the remote build). Declaring it here produced drift after each code deploy,
+    # caught by `terraform plan` on 2026-10-02.
   }
 
   tags = local.common_tags
