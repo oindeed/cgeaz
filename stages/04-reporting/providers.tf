@@ -19,7 +19,18 @@ terraform {
 }
 
 provider "azurerm" {
-  features {}
+  features {
+    # Terraform manages storage through Azure Resource Manager only and never opens the
+    # storage data plane. Two reasons: (1) separation of duties, since the deployer and
+    # the plan-only CI identity have no business reading evidence contents, only the
+    # collector and reporter do; (2) it works from any authenticated shell, including
+    # Azure Cloud Shell, whose managed-identity token cannot target a single storage
+    # account. Every storage setting this repo uses (blob service properties, containers,
+    # the WORM policy) is an ARM resource, so nothing is lost.
+    storage {
+      data_plane_available = false
+    }
+  }
   storage_use_azuread = true
 }
 
