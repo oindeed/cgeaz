@@ -46,7 +46,7 @@ locals {
 # blast radius: the policy flips allowBlobPublicAccess to false on storage accounts under
 # mg-grc-sandbox and touches no other property. The identity it runs as holds Storage
 # Account Contributor (the narrowest built-in role that can write the property), which
-# could in principle change other account settings or list keys. That residual risk is
+# could in principle change other account settings, list keys, or delete storage accounts. That residual risk is
 # bounded by: the identity is used only by the policy engine, in dry-run every run needs
 # a human-created remediation task, every write it makes is attributed to it in the
 # Activity Log, and the role exists only when remediation_mode != audit. Production step:
