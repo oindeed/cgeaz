@@ -54,3 +54,9 @@ variable "restricted_network_policy_effect" {
     error_message = "restricted_network_policy_effect must be Audit, Deny, or Disabled."
   }
 }
+
+variable "tripwire_enabled" {
+  description = "Run the hourly out-of-band change alert (tripwire.tf). Read-only; false pauses it without deleting the rule's history."
+  type        = bool
+  default     = true
+}

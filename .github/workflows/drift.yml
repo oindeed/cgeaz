@@ -1,7 +1,7 @@
 name: drift-detection
 
-# Detector 1 of 2: does reality still match the code? (Detector 2 is the KQL tripwire —
-# who's been touching reality? — scheduled in Log Analytics.)
+# Detector 1 of 2: does reality still match the code? (Detector 2, who is touching reality,
+# is the hourly Activity Log alert in stages/01-foundation/tripwire.tf.)
 # terraform plan -detailed-exitcode: 0 = clean, 2 = drift. Drift opens an issue with the diff.
 
 on:
@@ -39,9 +39,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # terraform_wrapper: false is load-bearing. The wrapper can report plan exit code 2
+      # as success, so `-detailed-exitcode` never surfaces drift through it.
+      # Validated failure: on 2026-10-03 at 13:07 UTC this job ran green on every stage
+      # while stage 01 carried a deliberate out-of-band change (Lab 6: the public-blob
+      # effect applied as Audit against code that says Deny). No drift was reported. The
+      # old step also piped plan through tee under continue-on-error, so a plan that
+      # errored would have looked identical to a clean one.
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.8"
+          terraform_wrapper: false
 
       - uses: azure/login@v2
         with:
@@ -49,18 +57,26 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      # 0 = clean, 2 = drift, anything else (or no code at all, if init fails) = the
+      # detector itself is broken. Only a clean plan passes this step; the issue and the
+      # job status are both set from the code below, so drift is never a green run.
       - name: plan with detailed exit code
         id: plan
         working-directory: stages/${{ matrix.stage }}
         continue-on-error: true
         run: |
+          echo "exitcode=init-failed" >> "$GITHUB_OUTPUT"
           terraform init -input=false \
             -backend-config="resource_group_name=rg-grc-tfstate" \
             -backend-config="storage_account_name=${{ vars.STATE_STORAGE_ACCOUNT }}" \
             -backend-config="container_name=tfstate"
-          terraform plan -input=false -detailed-exitcode -no-color -out=drift.plan \
-            2>&1 | tee plan-output.txt
-          echo "exitcode=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          set +e
+          terraform plan -input=false -detailed-exitcode -no-color -out=drift.plan > plan-output.txt 2>&1
+          code=$?
+          set -e
+          cat plan-output.txt
+          echo "exitcode=$code" >> "$GITHUB_OUTPUT"
+          exit $code
 
       - name: open drift issue
         if: steps.plan.outputs.exitcode == '2'
@@ -76,3 +92,12 @@ jobs:
               body: 'Reality no longer matches code. This is a change-management finding that generated itself.\n\n```\n' + body.slice(0, 60000) + '\n```',
               labels: ['drift'],
             });
+
+      - name: fail on drift or detector error
+        if: steps.plan.outputs.exitcode != '0'
+        run: |
+          case "${{ steps.plan.outputs.exitcode }}" in
+            2) echo "::error title=Drift detected::stages/${{ matrix.stage }}: reality no longer matches code. See the plan output above and the drift issue." ;;
+            *) echo "::error title=Drift detector failed::stages/${{ matrix.stage }}: plan did not complete (exit ${{ steps.plan.outputs.exitcode }}). A detector that cannot run is not a clean result." ;;
+          esac
+          exit 1

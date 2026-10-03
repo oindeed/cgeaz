@@ -65,4 +65,5 @@ synthetic data ever lives here, and the `restricted` tier exists to prove the gu
 | `tier0.yml`: conftest verify | Gate rules that do not do what they claim | PR.PS |
 | GRC Pipeline Planner role (`labs/06-loop/ci-planner-role.json`) | CI that could change the environment it is only meant to inspect; replaces Contributor on the CI identity | PR.AA, GV.RR |
 | Pinned, checksum-verified conftest in `gate.yml` | A mutable third-party action executing inside a job that holds a cloud token | GV.SC, PR.PS |
-| `drift.yml` + KQL tripwire | Out-of-band change going unnoticed | DE.CM, DE.AE |
+| `drift.yml` (nightly plan, issue on drift) | Reality diverging from code goes unnoticed | DE.CM, DE.AE |
+| `tripwire.tf`: hourly Activity Log alert | An identity outside the pipeline automation changing reality goes unnoticed; the caller is named and the owner is emailed | DE.CM, DE.AE |
