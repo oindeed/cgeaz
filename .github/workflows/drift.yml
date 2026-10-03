@@ -23,6 +23,14 @@ env:
   TF_VAR_owner_email: ${{ vars.OWNER_EMAIL }}
   TF_VAR_deployer_object_id: ${{ vars.DEPLOYER_OBJECT_ID }}
 
+# One Terraform run at a time against the shared state. Overlapping gate and drift runs
+# contend for the same state locks and fail with a lock error that looks like a plan
+# failure (validated 2026-10-03: two gate runs 11 seconds apart on one PR, 3 of 4 stages
+# red, all 4 green on re-run). Queue, never cancel: a cancelled drift run is a missed one.
+concurrency:
+  group: terraform-state
+  cancel-in-progress: false
+
 jobs:
   drift:
     # Runs only in forks that have been armed (Lab 6: labs/06-loop/arm-your-fork.sh).
