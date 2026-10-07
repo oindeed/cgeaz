@@ -68,7 +68,10 @@ Two things this table shows that a burst of manual runs could not:
 - **The collector tracks a changing environment without intervention.** Defender's
   count went 0, 2, 4, 102 as it completed its first full assessment cycle on the new
   subscription; Azure Policy went from 21 to 30 once the classification policies had
-  evaluated every store. No code or configuration changed between those nights.
+  evaluated every store. No code or configuration changed between those nights. Of the
+  132 documents in the 2026-10-06 run, **53 are Unhealthy** (`snapshots`, `COUNT(1)` with
+  `status = "Unhealthy"` for `065ebd0d`), and that night's daily POA&M is built from that
+  run, so it carries those 53, each dated from its own first-seen time.
 - **The weekly SAR runs on its own.** `sar/2026/10/sar-2026-10-05T07…Z.md` was written by
   the Monday 07:00 UTC timer with no manual trigger: 2 open findings, 10 sweeps in its
   7-day collection history.
