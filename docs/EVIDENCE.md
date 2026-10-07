@@ -54,12 +54,24 @@ SELECT c.startedAt, c.trigger, c.status, c.sources, c.error FROM c ORDER BY c.st
 ```
 
 From 2026-10-04 on, this returns one `timer` row per night with no manual runs; the
-nightly cadence is the operations evidence. **Pending, Oct 7 and Oct 11:** the nightly
-run IDs are recorded below.
+nightly cadence is the operations evidence. Timer runs as of 2026-10-07 01:15 UTC:
 
-| Night (05:00 UTC) | runId | Outcome | Documents |
-|---|---|---|---|
-| 2026-10-03 | (first nightly timer run) | succeeded | see SAR |
+| Night (05:00 UTC) | runId | Outcome | Defender | Azure Policy |
+|---|---|---|---|---|
+| 2026-10-03 | `d99a91de-075d-4596-86c7-16fb9f5ee0f3` | succeeded | 0 | 21 |
+| 2026-10-04 | `e06ebc2f-a61b-42cc-a32c-ee52de6b25e7` | succeeded | 2 | 30 |
+| 2026-10-05 | `bd55b324-5a87-4533-92b8-adac1e4e399a` | succeeded | 4 | 30 |
+| 2026-10-06 | `065ebd0d-ab51-44da-8323-bfc68c8c4238` | succeeded | 102 | 30 |
+
+Two things this table shows that a burst of manual runs could not:
+
+- **The collector tracks a changing environment without intervention.** Defender's
+  count went 0, 2, 4, 102 as it completed its first full assessment cycle on the new
+  subscription; Azure Policy went from 21 to 30 once the classification policies had
+  evaluated every store. No code or configuration changed between those nights.
+- **The weekly SAR runs on its own.** `sar/2026/10/sar-2026-10-05T07…Z.md` was written by
+  the Monday 07:00 UTC timer with no manual trigger: 2 open findings, 10 sweeps in its
+  7-day collection history.
 
 ## 4. Every report number traces to a stored document
 
@@ -104,7 +116,10 @@ indefinitely.
 | `sar-2026-10-03T195307Z.md` | same | 2 findings; 8 sweeps in the 7-day history |
 | `snapshots`, `COUNT(1) ... status = "Unhealthy"` for that runId | same | **2**, run 19:56 UTC |
 
-Re-run of the same snapshot query after at least four nightly sweeps: recorded in section 3.
+**Re-run 2026-10-07 01:16 UTC, three nightly sweeps later:** the same snapshot query for
+`6b565546` still returns **2**, while the latest-state container had moved on to 102
+Defender documents for the 2026-10-06 run. The report from Saturday reproduces from its
+`runId` even though the environment it described has since changed.
 
 ## 5. Past reports cannot be changed
 
