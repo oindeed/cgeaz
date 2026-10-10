@@ -128,6 +128,8 @@ indefinitely.
 Defender documents for the 2026-10-06 run. The report from Saturday reproduces from its
 `runId` even though the environment it described has since changed.
 
+**Re-run 2026-10-10 01:25 UTC, six nightly sweeps later:** still **2**.
+
 ## 5. Past reports cannot be changed
 
 | Item | Value |
