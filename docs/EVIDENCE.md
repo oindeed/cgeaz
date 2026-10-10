@@ -54,7 +54,7 @@ SELECT c.startedAt, c.trigger, c.status, c.sources, c.error FROM c ORDER BY c.st
 ```
 
 From 2026-10-04 on, this returns one `timer` row per night with no manual runs; the
-nightly cadence is the operations evidence. Timer runs as of 2026-10-07 01:15 UTC:
+nightly cadence is the operations evidence. Timer runs as of 2026-10-10 01:12 UTC (seven consecutive nights, no gaps, no failures):
 
 | Night (05:00 UTC) | runId | Outcome | Defender | Azure Policy |
 |---|---|---|---|---|
@@ -62,13 +62,17 @@ nightly cadence is the operations evidence. Timer runs as of 2026-10-07 01:15 UT
 | 2026-10-04 | `e06ebc2f-a61b-42cc-a32c-ee52de6b25e7` | succeeded | 2 | 30 |
 | 2026-10-05 | `bd55b324-5a87-4533-92b8-adac1e4e399a` | succeeded | 4 | 30 |
 | 2026-10-06 | `065ebd0d-ab51-44da-8323-bfc68c8c4238` | succeeded | 102 | 30 |
+| 2026-10-07 | `b441632a-a07b-411e-ab49-e04d6acce134` | succeeded | 102 | 30 |
+| 2026-10-08 | `4c4e7e9a-814f-40a5-957b-1c5ff7cb83a2` | succeeded | 102 | 30 |
+| 2026-10-09 | `312739ed-7289-4eb5-8edd-92ae99e1a3ce` | succeeded | 102 | 30 |
 
 Two things this table shows that a burst of manual runs could not:
 
 - **The collector tracks a changing environment without intervention.** Defender's
   count went 0, 2, 4, 102 as it completed its first full assessment cycle on the new
-  subscription; Azure Policy went from 21 to 30 once the classification policies had
-  evaluated every store. No code or configuration changed between those nights. Of the
+  subscription, then held steady at 102 for four nights; Azure Policy went from 21 to 30
+  once the classification policies had evaluated every store. No code or configuration
+  changed between those nights. Of the
   132 documents in the 2026-10-06 run, **53 are Unhealthy** (`snapshots`, `COUNT(1)` with
   `status = "Unhealthy"` for `065ebd0d`), and that night's daily POA&M is built from that
   run, so it carries those 53, each dated from its own first-seen time.
@@ -174,7 +178,7 @@ Defender finding is a documented risk acceptance ([CONTROLS.md](CONTROLS.md#risk
 
 | Detector | Question | Evidence |
 |---|---|---|
-| `drift.yml` (all five stages from PR #13) | Does reality match the code? | Found and fixed one real drift in stage 03 (an app setting that the zip deploy deletes; PR #5). On 2026-10-03 13:07 UTC it ran green during the Lab 6 out-of-band change, which it should have caught; root cause and fix in PR #10. **Proof after the fix:** with PRs #10 to #13 merged and nothing yet applied, the [18:04 UTC run](https://github.com/oindeed/cgeaz/actions/runs/37142810901) went red on exactly the four stages whose code was ahead of reality and opened issues [#14](https://github.com/oindeed/cgeaz/issues/14) (01: 3 to add), [#15](https://github.com/oindeed/cgeaz/issues/15) (02: 1 to add, 1 to destroy), [#16](https://github.com/oindeed/cgeaz/issues/16) (03: 6 to add, 1 to destroy) and [#17](https://github.com/oindeed/cgeaz/issues/17) (04: 1 to add, 1 to change, 1 to destroy); stage 06, unchanged, stayed green. Each issue's plan matched the apply that followed. After the applies, the [19:41 UTC run](https://github.com/oindeed/cgeaz/actions/runs/37148806618) was green on all five stages |
+| `drift.yml` (all five stages from PR #13) | Does reality match the code? | Found and fixed one real drift in stage 03 (an app setting that the zip deploy deletes; PR #5). On 2026-10-03 13:07 UTC it ran green during the Lab 6 out-of-band change, which it should have caught; root cause and fix in PR #10. **Proof after the fix:** with PRs #10 to #13 merged and nothing yet applied, the [18:04 UTC run](https://github.com/oindeed/cgeaz/actions/runs/37142810901) went red on exactly the four stages whose code was ahead of reality and opened issues [#14](https://github.com/oindeed/cgeaz/issues/14) (01: 3 to add), [#15](https://github.com/oindeed/cgeaz/issues/15) (02: 1 to add, 1 to destroy), [#16](https://github.com/oindeed/cgeaz/issues/16) (03: 6 to add, 1 to destroy) and [#17](https://github.com/oindeed/cgeaz/issues/17) (04: 1 to add, 1 to change, 1 to destroy); stage 06, unchanged, stayed green. Each issue's plan matched the apply that followed. After the applies, the [19:41 UTC run](https://github.com/oindeed/cgeaz/actions/runs/37148806618) was green on all five stages, and every scheduled run since (2026-10-04 through 2026-10-09) has been green on all five |
 | `tripwire.tf` | Who is touching reality? | Hourly alert on administrative writes by any caller other than the remediation identity (PR #10). **Proof:** stage 01 was applied at about 18:12 UTC on 2026-10-03, a human administrative write made outside the pipeline's automation. Alert `alert-grc-out-of-band-change-dev` fired at **18:20:59 UTC**, state `Fired`, and emailed the owner. The alert's query results carry the caller and operation for each write |
 
 ## 8. The CI identity can plan but not change anything
